@@ -1,4 +1,4 @@
-# V1 File Security Scanner (tool-v1fs-manual-scan)
+# V1 File Security Scanner (V1FS Manual Scan Tool)
 
 Docker-based web app that scans directories for malware using the [Trend Vision One™ File Security Go SDK](https://github.com/trendmicro/tm-v1-fs-golang-sdk). Configure API key and scan options in the UI, browse folders, run scans, and download PDF reports.
 
