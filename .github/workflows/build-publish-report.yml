@@ -1,4 +1,4 @@
-# Multi-job workflow: build → push-to-dockerhub → (vulnerabilities-scan, secrets-scan, sbom-scan) → report
+# Multi-job workflow: build → push-to-dockerhub → (vulnerabilities-scan, secrets-scan, sbom-scan, malware-scan) → report
 # Produces the native GitHub Actions flowchart view. No AWS, no deploy.
 
 name: Build, Scan & Publish
@@ -51,13 +51,13 @@ jobs:
         if: vars.PUBLISH_TO_DOCKERHUB == 'true'
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Tag and push
         id: push
         if: vars.PUBLISH_TO_DOCKERHUB == 'true'
         run: |
-          REPO="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}"
+          REPO="${{ vars.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}"
           docker tag ${{ env.IMAGE_NAME }}:latest "$REPO:latest"
           docker push "$REPO:latest" || true
           echo "repo=$REPO" >> $GITHUB_OUTPUT
@@ -241,9 +241,68 @@ jobs:
             SBOM_*.json
           if-no-files-found: ignore
 
+  malware-scan:
+    name: malware-scan
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+      - name: Load image
+        run: docker load -i image.tar
+      - name: TMAS malware scan
+        id: scan
+        uses: trendmicro/tmas-scan-action@v3.1.1
+        with:
+          tmasApiKey: ${{ secrets.TMAS_API_KEY }}
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          artifact: "docker://${{ env.IMAGE_NAME }}:latest"
+          vulnerabilitiesScan: "false"
+          malwareScan: "true"
+          secretsScan: "false"
+          additionalArgs: ""
+      - name: Analyze malware and create summary
+        if: always()
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y jq
+          echo "## 🛡️ Malware Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ ! -f tmas_scan_report.json ]; then
+            echo "⚠️ No scan output (scan failed or no results file). Check the **TMAS malware scan** step log." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          echo "### Overview" >> $GITHUB_STEP_SUMMARY
+          COUNT=$(jq -r '.malware.count // .malwareScan.findingsCount // .malwareScan.count // .malware.findings | length // 0' tmas_scan_report.json 2>/dev/null || echo "0")
+          COUNT=${COUNT:-0}
+          if [ "$COUNT" = "null" ]; then COUNT=0; fi
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Malware detected | $COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | $([ "$COUNT" = "0" ] 2>/dev/null && echo "✅ Clean" || echo "❌ Malware found") |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "$COUNT" != "null" ] && [ "$COUNT" -gt 0 ] 2>/dev/null; then
+            echo "### ❌ Malware details" >> $GITHUB_STEP_SUMMARY
+            echo "See the **malware-scan-results** artifact for full report (tmas_scan_report.json)." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            jq -r '(.malware.findings // .malwareScan.findings // [])[]? | "- " + (.name // .malwareName // .path // "—")' tmas_scan_report.json 2>/dev/null >> $GITHUB_STEP_SUMMARY || true
+          else
+            echo "### ✅ No malware detected" >> $GITHUB_STEP_SUMMARY
+          fi
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: malware-scan-results
+          path: |
+            scan-report.md
+            tmas_scan_report.json
+          if-no-files-found: ignore
+
   report:
     name: report
-    needs: [build, push-to-dockerhub, vulnerabilities-scan, secrets-scan, sbom-scan]
+    needs: [build, push-to-dockerhub, vulnerabilities-scan, secrets-scan, sbom-scan, malware-scan]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -254,6 +313,7 @@ jobs:
           VULN_RESULT="${{ needs.vulnerabilities-scan.result }}"
           SECRETS_RESULT="${{ needs.secrets-scan.result }}"
           SBOM_RESULT="${{ needs.sbom-scan.result }}"
+          MALWARE_RESULT="${{ needs.malware-scan.result }}"
           PUSH_REPO="${{ needs.push-to-dockerhub.outputs.repo }}"
 
           status_icon() {
@@ -267,8 +327,8 @@ jobs:
             echo ""
             echo "## Flow"
             echo ""
-            echo "| build | push-to-dockerhub | vulnerabilities-scan | secrets-scan | sbom-scan | report |"
-            echo "| $(status_icon "$BUILD_RESULT") | $(status_icon "$PUSH_RESULT") | $(status_icon "$VULN_RESULT") | $(status_icon "$SECRETS_RESULT") | $(status_icon "$SBOM_RESULT") | ✅ |"
+            echo "| build | push-to-dockerhub | vulnerabilities-scan | secrets-scan | sbom-scan | malware-scan | report |"
+            echo "| $(status_icon "$BUILD_RESULT") | $(status_icon "$PUSH_RESULT") | $(status_icon "$VULN_RESULT") | $(status_icon "$SECRETS_RESULT") | $(status_icon "$SBOM_RESULT") | $(status_icon "$MALWARE_RESULT") | ✅ |"
             echo ""
             echo "---"
             echo "## 📦 Docker Hub"
@@ -298,10 +358,11 @@ jobs:
             echo "| Vulnerabilities | $(status_icon "$VULN_RESULT") |"
             echo "| Secrets | $(status_icon "$SECRETS_RESULT") |"
             echo "| SBOM | $(status_icon "$SBOM_RESULT") |"
+            echo "| Malware | $(status_icon "$MALWARE_RESULT") |"
             echo ""
-            echo "Each scan job writes a **detailed report** to its own **Summary** tab (severity counts, findings tables, status). Open **vulnerabilities-scan**, **secrets-scan**, or **sbom-scan** above to view."
+            echo "Each scan job writes a **detailed report** to its own **Summary** tab (severity counts, findings tables, status). Open **vulnerabilities-scan**, **secrets-scan**, **sbom-scan**, or **malware-scan** above to view."
             echo ""
-            echo "📥 **Artifacts:** \`vulnerability-scan-results\`, \`secrets-scan-results\`, \`sbom-scan-results\` (full JSON + Markdown)."
+            echo "📥 **Artifacts:** \`vulnerability-scan-results\`, \`secrets-scan-results\`, \`sbom-scan-results\`, \`malware-scan-results\` (full JSON + Markdown)."
             echo ""
             echo "---"
           } >> $GITHUB_STEP_SUMMARY
