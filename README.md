@@ -57,7 +57,6 @@ Use the **same path** inside the container as on the host to avoid confusion (e.
 
 ```bash
 docker run -d -p 8080:8080 \
-  -v v1fs-data:/data \
   -v /mnt/usb:/mnt/usb:ro \
   --name v1fs-scanner \
   v1fs-scanner
@@ -67,7 +66,6 @@ docker run -d -p 8080:8080 \
 
 ```bash
 docker run -d -p 8080:8080 \
-  -v v1fs-data:/data \
   -v /mnt/usb:/mnt/usb \
   --name v1fs-scanner \
   v1fs-scanner
@@ -148,7 +146,6 @@ docker rm v1fs-scanner
 
 # Run the new image (same volume and drive mount)
 docker run -d -p 8080:8080 \
-  -v v1fs-data:/data \
   -v /mnt/usb:/mnt/usb \
   --name v1fs-scanner \
   <your-registry>/v1fs-scanner:latest
@@ -173,7 +170,6 @@ docker rm v1fs-scanner
 
 # Run the new image (same volume and drive mount)
 docker run -d -p 8080:8080 \
-  -v v1fs-data:/data \
   -v /mnt/usb:/mnt/usb \
   --name v1fs-scanner \
   v1fs-scanner
