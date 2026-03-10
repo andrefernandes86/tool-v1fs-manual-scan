@@ -12,6 +12,9 @@ import (
 	"github.com/jung-kurt/gofpdf"
 )
 
+// DefaultConcurrency is the number of files scanned in parallel when using concurrent scan.
+const DefaultConcurrency = 8
+
 type TaskStore struct {
 	mu        sync.RWMutex
 	tasks     map[string]*Task
@@ -74,10 +77,11 @@ type verboseScanResponse struct {
 	} `json:"result"`
 }
 
-// ScanOptions configures what to do when malware is detected
+// ScanOptions configures what to do when malware is detected and how to run the scan.
 type ScanOptions struct {
 	ActionOnMalware string // "log", "quarantine", "delete"
 	QuarantinePath  string
+	Concurrency     int    // number of files scanned in parallel; 0 = use DefaultConcurrency
 }
 
 func (s *TaskStore) Create(path string) *Task {
@@ -124,6 +128,14 @@ func (t *Task) UpdateProgress(current string, scanned int, total int) {
 	t.CurrentFile = current
 	t.ScannedCount = scanned
 	t.TotalFiles = total
+}
+
+// IncrementScanned updates ScannedCount by one and sets CurrentFile to path (for concurrent scan).
+func (t *Task) IncrementScanned(path string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.ScannedCount++
+	t.CurrentFile = path
 }
 
 func (t *Task) AddMalicious(fileName, filePath, malwareName string) {
@@ -191,22 +203,43 @@ func (s *TaskStore) RunScan(taskID string, rootPath string, apiKey, region strin
 	}
 
 	tags := []string{"v1fs-scanner"}
-	for i, path := range files {
-		t.UpdateProgress(path, i, total)
-		resp, err := client.ScanFile(path, tags)
-		if err != nil {
-			continue
-		}
-
-		fileName, filePath, malwareName := parseScanResponse(resp, path)
-		if fileName == "" && filePath == "" {
-			continue
-		}
-		if malwareName != "" {
-			t.AddMalicious(fileName, filePath, malwareName)
-			performAction(path, opts)
-		}
+	concurrency := opts.Concurrency
+	if concurrency <= 0 {
+		concurrency = DefaultConcurrency
 	}
+	if concurrency > total {
+		concurrency = total
+	}
+	if concurrency < 1 {
+		concurrency = 1
+	}
+
+	jobs := make(chan string, total)
+	var wg sync.WaitGroup
+	for w := 0; w < concurrency; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for path := range jobs {
+				resp, err := client.ScanFile(path, tags)
+				if err != nil {
+					t.IncrementScanned(path)
+					continue
+				}
+				fileName, filePath, malwareName := parseScanResponse(resp, path)
+				if malwareName != "" {
+					t.AddMalicious(fileName, filePath, malwareName)
+					performAction(path, opts)
+				}
+				t.IncrementScanned(path)
+			}
+		}()
+	}
+	for _, path := range files {
+		jobs <- path
+	}
+	close(jobs)
+	wg.Wait()
 
 	t.UpdateProgress("", total, total)
 	reportPath, err := s.writePDF(taskID, t)

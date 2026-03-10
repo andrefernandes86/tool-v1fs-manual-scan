@@ -4,7 +4,7 @@ Docker-based web app that scans directories for malware using the [Trend Vision 
 
 ## Features
 
-- **Settings**: Configure and persist V1 API key, region, and actions on detection (log only, move to quarantine, or delete).
+- **Settings**: Configure and persist V1 API key, region, actions on detection (log only, move to quarantine, or delete), and number of simultaneous files to scan.
 - **Folder browser**: Browse from root (`/`) and all directories; select a folder to scan (including mounted external drives).
 - **Scan**: Live progress (elapsed time, files scanned, malicious count, current file path); banner listing detected malware; PDF report at the end.
 - **History**: List of past scans with statistics and download links for reports.
@@ -96,6 +96,7 @@ In **Settings**, under **Actions on detection**:
 - **Log only** — Only record findings in the report and banner; files are not moved or deleted.
 - **Move to quarantine folder** — Move detected files to a folder you choose. When selected, enter the **Quarantine folder path** (e.g. `/data/quarantine`). Use the Scanner tab to browse and copy a path if needed.
 - **Delete** — Permanently delete detected malicious files.
+- **Simultaneous files to scan** — Number of files scanned in parallel (1–64). Leave empty for the default (8). Higher values speed up scans but use more API quota. You can also set this via the `V1FS_SCAN_CONCURRENCY` environment variable; the Settings value takes precedence when non-zero.
 
 Click **Save actions** after changing.
 
@@ -123,6 +124,7 @@ Click **Save actions** after changing.
 | `V1FS_CONFIG_PATH` | Path to config file (default `/data/config.json`). |
 | `V1FS_REPORTS_DIR` | Directory for PDF reports (default `/data/reports`). |
 | `V1FS_TEST_SAMPLES_DIR` | Directory for test samples (default `/data/test-samples`). |
+| `V1FS_SCAN_CONCURRENCY` | Number of files scanned in parallel (default `8`). You can also set this in **Settings → Actions on detection**; the UI value takes precedence when set. |
 
 Secrets are not stored in the image; use environment variables or the web UI.
 
@@ -186,7 +188,7 @@ docker run -d -p 8080:8080 \
 
 ### What is preserved
 
-- Config (API key, region, actions, quarantine path) and PDF reports in the **Docker volume** (`v1fs-data`). They persist as long as you keep the volume and pass it to the new container with `-v v1fs-data:/data`.
+- Config (API key, region, actions, quarantine path, scan concurrency) and PDF reports in the **Docker volume** (`v1fs-data`). They persist as long as you keep the volume and pass it to the new container with `-v v1fs-data:/data`.
 
 ---
 

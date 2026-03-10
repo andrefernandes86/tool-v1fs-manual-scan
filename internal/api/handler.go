@@ -94,6 +94,7 @@ func (h *Handler) serveStatic(name string, w http.ResponseWriter, r *http.Reques
 func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 	apiKey, region := h.cfg.Get()
 	action, quarantinePath := h.cfg.GetScanAction()
+	concurrency := h.cfg.GetScanConcurrency()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"apiKeySet":       apiKey != "",
@@ -101,6 +102,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"configured":      apiKey != "" && region != "",
 		"actionOnMalware": action,
 		"quarantinePath":  quarantinePath,
+		"scanConcurrency": concurrency,
 	})
 }
 
@@ -139,6 +141,7 @@ func (h *Handler) saveScanAction(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ActionOnMalware string `json:"actionOnMalware"`
 		QuarantinePath  string `json:"quarantinePath"`
+		ScanConcurrency *int   `json:"scanConcurrency"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -149,6 +152,16 @@ func (h *Handler) saveScanAction(w http.ResponseWriter, r *http.Request) {
 		action = "log"
 	}
 	h.cfg.SetScanAction(action, strings.TrimSpace(body.QuarantinePath))
+	if body.ScanConcurrency != nil {
+		n := *body.ScanConcurrency
+		if n < 0 {
+			n = 0
+		}
+		if n > 64 {
+			n = 64
+		}
+		h.cfg.SetScanConcurrency(n)
+	}
 	if err := h.cfg.Save(h.configPath); err != nil {
 		http.Error(w, "failed to save config", http.StatusInternalServerError)
 		return
@@ -209,7 +222,15 @@ func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "quarantine path required when action is 'Move to quarantine'; set it in Settings", http.StatusBadRequest)
 		return
 	}
-	opts := scanner.ScanOptions{ActionOnMalware: action, QuarantinePath: quarantinePath}
+	concurrency := h.cfg.GetScanConcurrency()
+	if concurrency <= 0 {
+		if s := os.Getenv("V1FS_SCAN_CONCURRENCY"); s != "" {
+			if n, err := strconv.Atoi(s); err == nil && n > 0 {
+				concurrency = n
+			}
+		}
+	}
+	opts := scanner.ScanOptions{ActionOnMalware: action, QuarantinePath: quarantinePath, Concurrency: concurrency}
 	task := h.store.Create(path)
 	go h.store.RunScan(task.ID, path, apiKey, region, opts)
 

@@ -225,6 +225,8 @@
       const radio = document.querySelector('input[name="actionOnMalware"][value="' + action + '"]');
       if (radio) radio.checked = true;
       document.getElementById('input-quarantine-path').value = c.quarantinePath || '';
+      const concurrencyEl = document.getElementById('input-scan-concurrency');
+      if (concurrencyEl) concurrencyEl.value = (c.scanConcurrency > 0) ? String(c.scanConcurrency) : '';
       toggleQuarantinePath();
     });
   }
@@ -243,11 +245,17 @@
     e.preventDefault();
     const action = document.querySelector('input[name="actionOnMalware"]:checked').value;
     const quarantinePath = document.getElementById('input-quarantine-path').value.trim();
+    const concurrencyEl = document.getElementById('input-scan-concurrency');
+    let scanConcurrency = 0;
+    if (concurrencyEl && concurrencyEl.value.trim() !== '') {
+      const n = parseInt(concurrencyEl.value.trim(), 10);
+      if (!isNaN(n) && n >= 1 && n <= 64) scanConcurrency = n;
+    }
     try {
       await api('/api/config/scan-action', {
         method: 'POST',
         json: true,
-        body: JSON.stringify({ actionOnMalware: action, quarantinePath: quarantinePath })
+        body: JSON.stringify({ actionOnMalware: action, quarantinePath: quarantinePath, scanConcurrency: scanConcurrency })
       });
       alert('Actions saved.');
     } catch (err) {

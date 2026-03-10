@@ -11,6 +11,7 @@ type Config struct {
 	Region          string `json:"region,omitempty"`
 	ActionOnMalware string `json:"actionOnMalware,omitempty"` // "log", "quarantine", "delete"
 	QuarantinePath  string `json:"quarantinePath,omitempty"`
+	ScanConcurrency int    `json:"scanConcurrency,omitempty"` // 0 = use default (8)
 	mu              sync.RWMutex
 }
 
@@ -49,6 +50,12 @@ func (c *Config) GetScanAction() (action, quarantinePath string) {
 	return action, c.QuarantinePath
 }
 
+func (c *Config) GetScanConcurrency() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ScanConcurrency
+}
+
 func (c *Config) SetScanAction(action, quarantinePath string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -57,6 +64,12 @@ func (c *Config) SetScanAction(action, quarantinePath string) {
 	}
 	c.ActionOnMalware = action
 	c.QuarantinePath = quarantinePath
+}
+
+func (c *Config) SetScanConcurrency(n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ScanConcurrency = n
 }
 
 func (c *Config) Save(path string) error {

@@ -99,6 +99,11 @@
             <label class="radio-label">
               <input type="radio" name="actionOnMalware" value="delete"> Delete malicious file
             </label>
+            <label>
+              Simultaneous files to scan
+              <input type="number" id="input-scan-concurrency" min="1" max="64" placeholder="Default: 8" title="Number of files scanned in parallel (1–64). Leave empty or 0 for default 8.">
+            </label>
+            <p class="hint">How many files to scan at once (1–64). Higher values speed up scans but use more API quota. Default is 8.</p>
             <button type="submit" class="btn btn-primary">Save actions</button>
           </form>
         </div>
