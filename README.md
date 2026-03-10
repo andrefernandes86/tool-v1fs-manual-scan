@@ -1,6 +1,6 @@
 # V1 File Security Scanner (tool-v1fs-manual-scan)
 
-Web application that uses the [Trend Vision One™ File Security Go SDK](https://github.com/trendmicro/tm-v1-fs-golang-sdk) to scan directories for malware. Runs as a Docker container. Configure API key and scan options in the UI, browse folders, run scans, and download PDF reports.
+Docker-based web app that scans directories for malware using the [Trend Vision One™ File Security Go SDK](https://github.com/trendmicro/tm-v1-fs-golang-sdk). Configure API key and scan options in the UI, browse folders, run scans, and download PDF reports.
 
 ## Features
 
@@ -28,66 +28,54 @@ Open **http://localhost:8080** in your browser. If you did not pass an API key v
 
 ---
 
-## Scanning an external disk (USB drive or hard drive)
+## Scanning an external disk (USB or hard drive)
 
-To scan a USB stick or external hard drive connected to the host, mount it under **`/mnt/<drive>`** on the host and pass that path into the container. The **recommended scan target** in the web UI is **`/mnt/drive`** (see below).
+Mount the drive on the host, then pass it into the container. Use the **same path** on both sides (e.g. `/mnt/usb` on host and in container) so the UI shows a path you recognise.
 
-### 1. Mount the drive on the host (recommended: `/mnt/<drive>`)
+### 1. Mount the drive on the host
 
 **Linux**
 
-- List block devices: `lsblk` or `fdisk -l`
-- Create a mount point and mount the partition, e.g.:
-  ```bash
-  sudo mkdir -p /mnt/usb
-  sudo mount /dev/sdb1 /mnt/usb
-  ```
-  Use any name instead of `usb` (e.g. `external`, `backup`). We recommend **`/mnt/<drive>`** so you can use the same Docker command pattern below.
+```bash
+sudo mkdir -p /mnt/usb
+sudo mount /dev/sdb1 /mnt/usb
+```
 
-**macOS**
+Use any name you like instead of `usb` (e.g. `external`, `backup`).
 
-- The volume usually appears under `/Volumes/<VolumeName>`. You can symlink or bind it under `/mnt` if you want the same paths, or use `/Volumes/<VolumeName>` directly in the Docker `-v` below.
+**macOS** — Volumes appear under `/Volumes/<VolumeName>`.  
+**Windows** — Use a path Docker Desktop can access; share the drive in Docker settings if needed.
 
-**Windows (Docker Desktop)**
+### 2. Run the container with the drive mounted
 
-- Use a path Docker Desktop can access; you may need to share the drive in Docker Desktop settings.
+Use the **same path** inside the container as on the host to avoid confusion (e.g. `/mnt/usb` both sides).
 
-### 2. Run the container with the external drive mounted at `/mnt/drive`
+- **Read-only (`:ro`)** — Use when you only want to **scan and report**. The app cannot quarantine or delete files. Use this if you do not want the solution to take any action on the drive.
+- **Read-write (no `:ro`)** — Use when you want the app to **quarantine or delete** detected files on that drive.
 
-Mount your host path into the container at **`/mnt/drive`**. That way the **recommended target to scan** in the UI is always **`/mnt/drive`**.
-
-**Example: drive mounted on host at `/mnt/usb`**
+**Example: scan only (no quarantine/delete)**
 
 ```bash
 docker run -d -p 8080:8080 \
   -v v1fs-data:/data \
-  -v /mnt/usb:/mnt/drive:ro \
+  -v /mnt/usb:/mnt/usb:ro \
   --name v1fs-scanner \
   v1fs-scanner
 ```
 
-- Replace `/mnt/usb` with your host path (e.g. `/mnt/external`, `/mnt/backup`, or `/Volumes/MyUSB` on macOS).
-- The container sees the drive at **`/mnt/drive`**.
-- In the web UI: **Scanner** tab → browse to **/** → **mnt** → **drive** → **Use this folder** → **Start scan**. So the **recommended scan target** is **`/mnt/drive`**.
-
-**Example: drive at `/mnt/external` on the host**
+**Example: allow quarantine/delete on the drive**
 
 ```bash
 docker run -d -p 8080:8080 \
   -v v1fs-data:/data \
-  -v /mnt/external:/mnt/drive:ro \
+  -v /mnt/usb:/mnt/usb \
   --name v1fs-scanner \
   v1fs-scanner
 ```
 
-Again, in the UI browse to **/** → **mnt** → **drive** and use that as the scan target.
+In the UI: **Scanner** → browse **/** → **mnt** → **usb** → **Use this folder** → **Start scan**.
 
-**Important**
-
-- Use the actual mount path of the drive on your host; replace `/mnt/usb` or `/mnt/external` with your path.
-- `:ro` is optional but recommended so the container cannot modify the external drive.
-- If the container is already running, stop and remove it, then run the command again with the new volume:  
-  `docker stop v1fs-scanner && docker rm v1fs-scanner` then `docker run ...` as above.
+If the container is already running, stop and remove it first: `docker stop v1fs-scanner && docker rm v1fs-scanner`, then run the `docker run` command again.
 
 ---
 
@@ -116,28 +104,14 @@ Click **Save actions** after changing.
 ### 3. Run a scan task
 
 1. Open the **Scanner** tab.
-2. **Folder to scan**:
-   - Use **Root** to start from `/`.
-   - Click a folder name to open it. For an external drive mounted at **`/mnt/drive`**, browse **/** → **mnt** → **drive**, then click **Use this folder** (the path appears under “Selected:”).
-   - The **recommended scan target** for an external disk is **`/mnt/drive`** when you start the container with `-v /mnt/<your-drive>:/mnt/drive:ro`.
-3. Click **Start scan**.
-4. Watch **Scan in progress**:
-   - **Elapsed** — Time since the scan started.
-   - **Files scanned** — Count of files scanned so far and total.
-   - **Malicious found** — Number of files detected as malicious so far.
-   - **Scanning** — Full path of the file currently being scanned.
-5. When the scan finishes, you can **Download PDF report** from the same card. Detected files are also listed in the **Malicious files detected** banner.
+2. **Folder to scan**: Click **Root**, then open the folder you want (e.g. **mnt** → **usb** for a drive mounted at `/mnt/usb`). Click **Use this folder**, then **Start scan**.
+3. In **Scan in progress** you see: **Elapsed** time, **Files scanned** (current/total), **Malicious found**, and the **Scanning** path. When done, use **Download PDF report** and check the **Malicious files detected** banner.
 
 ### 4. Check results
 
-- **During/after scan (Scanner tab)**  
-  Progress, malicious count, and “Malicious files detected” list with file name, path, and malware name. Use **Download PDF report** when the scan is done.
-
-- **History tab**  
-  List of past scans: path scanned, start time, files scanned, malicious count, and a **Download PDF** link for each report.
-
-- **Test scan**  
-  In **Settings** → **Test options**, use **Run test scan** to scan the built-in test samples (`/data/test-samples`: EICAR and a clean file) and confirm detection works.
+- **Scanner tab** — Progress, malicious count, and list of detected files; **Download PDF report** when the scan finishes.
+- **History tab** — Past scans with path, time, counts, and a **Download PDF** link per report.
+- **Settings → Test options** — **Run test scan** to scan built-in samples (`/data/test-samples`: EICAR + clean file) and verify detection.
 
 ---
 
@@ -172,10 +146,10 @@ docker pull <your-registry>/v1fs-scanner:latest
 docker stop v1fs-scanner
 docker rm v1fs-scanner
 
-# Run the new image with the same volume and external drive mount
+# Run the new image (same volume and drive mount)
 docker run -d -p 8080:8080 \
   -v v1fs-data:/data \
-  -v /mnt/usb:/mnt/drive:ro \
+  -v /mnt/usb:/mnt/usb \
   --name v1fs-scanner \
   <your-registry>/v1fs-scanner:latest
 ```
@@ -197,16 +171,16 @@ docker build --no-cache -t v1fs-scanner .
 docker stop v1fs-scanner
 docker rm v1fs-scanner
 
-# Run the new image (reuse your volume and external drive at /mnt/drive)
+# Run the new image (same volume and drive mount)
 docker run -d -p 8080:8080 \
   -v v1fs-data:/data \
-  -v /mnt/usb:/mnt/drive:ro \
+  -v /mnt/usb:/mnt/usb \
   --name v1fs-scanner \
   v1fs-scanner
 ```
 
 - **`--no-cache`** forces a full rebuild so base image, Go version, and dependencies (including the Trend Micro SDK) are updated.
-- Use the same `-v v1fs-data:/data` (and same external `-v` if you use one) so config and reports stay available.
+- Use the same `-v v1fs-data:/data` (and same drive mount if you use one) so config and reports stay available.
 
 ### What gets updated
 
