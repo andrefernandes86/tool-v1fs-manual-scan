@@ -7,13 +7,34 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div class="app">
-    <header class="header">
-      <h1>V1 File Security Scanner</h1>
-      <p class="subtitle">Trend Vision One™ File Security — scan directories for malware</p>
-    </header>
+  <div class="shell">
+    <aside class="side-nav">
+      <div class="side-nav-logo">
+        <span class="side-nav-dot"></span>
+        <span class="side-nav-title">TrendAI Vision One</span>
+      </div>
+      <div class="side-nav-section-label">Cloud Security</div>
+      <nav class="side-nav-section">
+        <button type="button" class="side-nav-item">Cloud Risk Management</button>
+        <button type="button" class="side-nav-item">Container Security</button>
+        <button type="button" class="side-nav-item side-nav-item-active">File Security</button>
+        <button type="button" class="side-nav-item">Server &amp; Workload</button>
+      </nav>
+    </aside>
 
-    <nav class="tabs">
+    <div class="shell-main">
+      <header class="header">
+        <div class="header-product">
+          <h1>File Security</h1>
+          <p class="subtitle">Manual scan utility powered by TrendAI Vision One</p>
+        </div>
+        <div class="header-meta">
+          <span class="header-chip">SDK mode</span>
+          <span class="header-chip header-chip-muted">Local environment</span>
+        </div>
+      </header>
+
+      <nav class="tabs">
       <button type="button" class="tab active" data-tab="scanner">Scanner</button>
       <button type="button" class="tab" data-tab="settings">Settings</button>
       <button type="button" class="tab" data-tab="history">History</button>
@@ -21,21 +42,30 @@
 
     <main class="panes">
       <section id="pane-scanner" class="pane active">
-        <div class="card">
-          <div class="card-header-row">
-            <div>
-              <h2>Folder to scan</h2>
-              <p class="hint">Browse to the folder you want to scan. The scan will include all files in this folder and its subfolders.</p>
+        <div class="card scanner-hero">
+          <div class="scanner-hero-header">
+            <div class="scanner-hero-icon" aria-hidden="true">
+              <span class="scanner-hero-badge"></span>
+            </div>
+            <div class="scanner-hero-copy">
+              <h2>Choose what to scan</h2>
+              <p class="hint">Pick a location on this system. The scan will include all files in the folder and its subfolders.</p>
             </div>
           </div>
-          <div class="folder-picker">
-            <div class="breadcrumb">
-              <button type="button" class="breadcrumb-btn" data-path="">Root</button>
-              <span id="breadcrumb-tail"></span>
+          <div class="scanner-hero-body">
+            <div class="scanner-column scanner-column-left">
+              <div class="breadcrumb">
+                <button type="button" class="breadcrumb-btn" data-path="">Root</button>
+                <span id="breadcrumb-tail"></span>
+              </div>
+              <div id="dir-list" class="dir-list"></div>
             </div>
-            <div id="dir-list" class="dir-list"></div>
-            <div class="folder-actions">
-              <p class="selected-path">Selected folder: <strong id="selected-path">—</strong></p>
+            <div class="scanner-column scanner-column-right">
+              <p class="field-label">Current selection</p>
+              <div class="selected-badge">
+                <code id="selected-path">—</code>
+              </div>
+              <p class="hint">Browse on the left, then set the folder you want to scan.</p>
               <div class="folder-actions-buttons">
                 <button type="button" id="btn-select-folder" class="btn btn-ghost">Use this folder</button>
                 <button type="button" id="btn-start-scan" class="btn btn-primary" disabled>Start scan</button>
@@ -163,6 +193,7 @@
         </div>
       </section>
     </main>
+    </div>
   </div>
   <script src="/app.js"></script>
 </body>
