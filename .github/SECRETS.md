@@ -1,34 +1,46 @@
-# Required secrets for GitHub Actions
+# Required secrets and variables for GitHub Actions
 
-Add these in **Settings → Secrets and variables → Actions** (repository secrets).  
-The pipeline runs without them; steps that need a secret will show **Skipped** in the report until you add the value.
+GitHub does not allow using `secrets` in workflow `if` conditions. So we use **repository variables** to turn steps on; you still store credentials in **Secrets**.
+
+Add these under **Settings → Secrets and variables → Actions**:
 
 ---
 
-## Docker Hub (publish image)
+## Repository variables (enable/disable steps)
+
+| Variable | Value | Effect |
+|----------|--------|--------|
+| `TMAS_SCAN_ENABLED` | `true` | Run Trend Vision One (TMAS) scan. You must also set the `TMAS_API_KEY` secret. |
+| `PUBLISH_TO_DOCKERHUB` | `true` | Log in and push the image to Docker Hub. You must also set `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets. |
+
+**How to add:** Settings → Secrets and variables → Actions → **Variables** tab → **New repository variable**.  
+If you don't set these, the corresponding steps are skipped and the pipeline report will say so.
+
+---
+
+## Secrets (credentials – never in code)
+
+### Docker Hub (for publish step)
 
 | Secret name           | Description | Where to get it |
 |----------------------|-------------|------------------|
 | `DOCKERHUB_USERNAME` | Your Docker Hub login (e.g. `johndoe`) | Your Docker Hub account |
 | `DOCKERHUB_TOKEN`   | Docker Hub access token (recommended) or password | [Docker Hub → Account Settings → Security → New Access Token](https://hub.docker.com/settings/security) |
 
-**Note:** Prefer a **Access Token** with “Read, Write, Delete” for the repository over your account password.
+**Note:** Prefer an **Access Token** with "Read, Write, Delete" for the repository over your account password.
 
----
-
-## Trend Vision One – TMAS (optional scan)
+### Trend Vision One – TMAS (for TMAS step)
 
 | Secret name      | Description | Where to get it |
 |------------------|-------------|------------------|
-| `TMAS_API_KEY`   | Vision One API key with **“Run artifact scan”** permission | [Trend Vision One](https://docs.trendmicro.com/en-us/documentation/article/trend-vision-one-artifact-scanner-tmas) → API Key |
+| `TMAS_API_KEY`   | Vision One API key with **"Run artifact scan"** permission | [Trend Vision One](https://docs.trendmicro.com/en-us/documentation/article/trend-vision-one-artifact-scanner-tmas) → API Key |
 
-The action uses `GITHUB_TOKEN` automatically for PR comments; no extra secret needed.  
-If `TMAS_API_KEY` is not set, the **Trend Vision One (TMAS)** step is skipped and the report will say so. The pipeline does **not** fail when TMAS is skipped or when TMAS finds issues (non-blocking).
+The action uses `GITHUB_TOKEN` automatically for PR comments; no extra secret needed.
 
 ---
 
 ## Summary
 
-- **Minimum to publish to Docker Hub:** set `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`.
-- **To enable TMAS scan:** set `TMAS_API_KEY` and `TMAS_REGION`.
-- No secrets are required for the **build** step; the report always runs and shows status for each step.
+- **To publish to Docker Hub:** Add variable `PUBLISH_TO_DOCKERHUB` = `true` and secrets `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
+- **To run TMAS scan:** Add variable `TMAS_SCAN_ENABLED` = `true` and secret `TMAS_API_KEY`.
+- **Build** always runs; no secrets or variables required. The report step always runs and shows the status of each step.
