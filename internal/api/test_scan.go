@@ -49,6 +49,15 @@ func (h *Handler) startTestScan(w http.ResponseWriter, r *http.Request) {
 	src := filepath.Join(h.testSamplesPath, srcName)
 	dest := filepath.Join(destDir, srcName)
 
+	// Ensure only the selected sample is present in the destination folder.
+	// This keeps each test run isolated (one file per run) even if the user
+	// reuses the same destination path.
+	otherSample := "eicar.com"
+	if srcName == "eicar.com" {
+		otherSample = "hello.txt"
+	}
+	_ = os.Remove(filepath.Join(destDir, otherSample))
+
 	data, err := os.ReadFile(src)
 	if err != nil {
 		http.Error(w, "failed to read sample file", http.StatusInternalServerError)
