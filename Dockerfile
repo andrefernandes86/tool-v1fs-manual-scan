@@ -23,10 +23,10 @@ ENV V1FS_REPORTS_DIR=/data/reports
 RUN mkdir -p /data/reports
 
 # Malware Sample
-RUN mkdir -p /data/reports && \
-    mkdir -p /data/test-samples && \
-    echo 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' \
-    > /data/test-samples/eicar.com
+#RUN mkdir -p /data/reports && \
+#    mkdir -p /data/test-samples && \
+#    echo 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' \
+#    > /data/test-samples/eicar.com
 
 EXPOSE 8080
 
