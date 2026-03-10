@@ -95,42 +95,45 @@
           </form>
         </div>
         <div class="card">
-          <h2>Actions on detection</h2>
-          <p class="hint">Choose what to do when a malicious file is found.</p>
-          <form id="form-scan-action">
-            <label class="radio-label">
-              <input type="radio" name="actionOnMalware" value="log" checked> Log only — record in report and banner, keep file
-            </label>
-            <label class="radio-label">
-              <input type="radio" name="actionOnMalware" value="quarantine"> Move to quarantine folder
-            </label>
-            <div id="quarantine-path-wrap" class="quarantine-path-wrap hidden">
-              <label>
-                Quarantine folder path
-                <input type="text" id="input-quarantine-path" placeholder="e.g. /data/quarantine">
+          <h2>Actions & performance</h2>
+          <p class="hint">Choose what to do when a malicious file is found and how aggressive scans should be.</p>
+          <form id="form-scan-action" class="scan-action-grid">
+            <div class="scan-action-column">
+              <p class="field-label">When malware is detected</p>
+              <label class="radio-label">
+                <input type="radio" name="actionOnMalware" value="log" checked> Log only — record in report and banner, keep file
               </label>
-              <p class="hint">Use the Scanner tab to browse to a folder, then paste or type the path here (e.g. /data/quarantine).</p>
+              <label class="radio-label">
+                <input type="radio" name="actionOnMalware" value="quarantine"> Move to quarantine folder
+              </label>
+              <div id="quarantine-path-wrap" class="quarantine-path-wrap hidden">
+                <label>
+                  Quarantine folder path
+                  <input type="text" id="input-quarantine-path" placeholder="e.g. /data/quarantine">
+                </label>
+                <p class="hint">Use the Scanner tab to browse to a folder, then paste or type the path here (e.g. /data/quarantine).</p>
+              </div>
+              <label class="radio-label">
+                <input type="radio" name="actionOnMalware" value="delete"> Delete malicious file
+              </label>
             </div>
-            <label class="radio-label">
-              <input type="radio" name="actionOnMalware" value="delete"> Delete malicious file
-            </label>
-            <label>
-              Simultaneous files to scan
-              <input type="number" id="input-scan-concurrency" min="1" max="64" placeholder="Default: 8" title="Number of files scanned in parallel (1–64). Leave empty for default 8.">
-            </label>
-            <p class="hint">How many files to scan at once (1–64). Higher values speed up scans but use more API quota. Default is 8.</p>
-            <label class="checkbox-label">
-              <input type="checkbox" id="input-hash-enabled"> Generate SHA-256 hashes for malicious files (slower scans)
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="input-predictive-ml"> Enable predictive machine learning (PML)
-            </label>
-            <label>
-              Maximum simultaneous scans
-              <input type="number" id="input-max-concurrent-scans" min="0" max="1000" placeholder="0 = unlimited" title="Maximum number of scans that can run at the same time (0 = unlimited).">
-            </label>
-            <p class="hint">Control how many scan jobs can run at once (0 = unlimited). Reducing this can protect API quota and system load when multiple users start scans.</p>
-            <button type="submit" class="btn btn-primary">Save actions</button>
+            <div class="scan-action-column">
+              <p class="field-label">Advanced options</p>
+              <label class="checkbox-label">
+                <input type="checkbox" id="input-hash-enabled"> Generate SHA-256 hashes for malicious files (slower scans)
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="input-predictive-ml"> Enable predictive machine learning (PML)
+              </label>
+              <label>
+                Maximum simultaneous scans
+                <input type="number" id="input-max-concurrent-scans" min="0" max="1000" placeholder="0 = unlimited" title="Maximum number of scans that can run at the same time (0 = unlimited).">
+              </label>
+              <p class="hint">Control how many scan jobs can run at once (0 = unlimited). Reducing this can protect API quota and system load when multiple users start scans.</p>
+            </div>
+            <div class="scan-action-footer">
+              <button type="submit" class="btn btn-primary">Save actions</button>
+            </div>
           </form>
         </div>
         <div class="card">

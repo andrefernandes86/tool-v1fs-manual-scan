@@ -4,7 +4,7 @@ Docker-based web app that scans directories for malware using the [Trend Vision 
 
 ## Features
 
-- **Settings**: Configure and persist V1 API key, region, actions on detection (log only, move to quarantine, or delete), number of simultaneous files to scan, maximum simultaneous scans, and optional file hash generation.
+- **Settings**: Configure and persist V1 API key, region, actions on detection (log only, move to quarantine, or delete), maximum simultaneous scans, predictive machine learning, and optional file hash generation.
 - **Folder browser**: Browse from root (`/`) and all directories; select a folder to scan (including mounted external drives).
 - **Scan**: Live progress (elapsed time, files scanned, malicious count, current file path); banner listing detected malware; PDF report at the end.
 - **History**: List of past scans with statistics and download links for reports.
@@ -96,7 +96,6 @@ In **Settings**, under **Actions on detection**:
 - **Log only** — Only record findings in the report and banner; files are not moved or deleted.
 - **Move to quarantine folder** — Move detected files to a folder you choose. When selected, enter the **Quarantine folder path** (e.g. `/data/quarantine`). Use the Scanner tab to browse and copy a path if needed.
 - **Delete** — Permanently delete detected malicious files.
-- **Simultaneous files to scan** — Number of files scanned in parallel (1–64). Leave empty for the default (8). Higher values speed up scans but use more API quota. You can also set this via the `V1FS_SCAN_CONCURRENCY` environment variable; the Settings value takes precedence when non-zero.
 - **Generate file hashes for malicious files** — When enabled, the scanner computes a SHA-256 hash for each malicious file and includes it in the PDF report. This adds extra I/O and CPU work, so disabling it keeps scans faster.
 - **Enable predictive machine learning (PML)** — When enabled, the scanner sends hints to Trend Vision One to use Predictive Machine Learning for file evaluation, as described in the vendor documentation.
 - **Maximum simultaneous scans** — How many scan jobs can run at the same time. Set `0` for unlimited (up to a maximum of 1000). Lower values can protect system resources and API quota when multiple scans are triggered.
@@ -127,7 +126,7 @@ Click **Save actions** after changing.
 | `V1FS_CONFIG_PATH` | Path to config file (default `/data/config.json`). |
 | `V1FS_REPORTS_DIR` | Directory for PDF reports (default `/data/reports`). |
 | `V1FS_TEST_SAMPLES_DIR` | Directory for test samples (default `/data/test-samples`). |
-| `V1FS_SCAN_CONCURRENCY` | Number of files scanned in parallel (default `8`). You can also set this in **Settings → Actions on detection**; the UI value takes precedence when set. |
+| `V1FS_SCAN_CONCURRENCY` | Number of files scanned in parallel (default `8`). This is an advanced server-side tuning option; in most cases you can leave it at the default. |
 
 Secrets are not stored in the image; use environment variables or the web UI.
 

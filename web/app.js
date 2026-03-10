@@ -248,8 +248,6 @@
       const radio = document.querySelector('input[name="actionOnMalware"][value="' + action + '"]');
       if (radio) radio.checked = true;
       document.getElementById('input-quarantine-path').value = c.quarantinePath || '';
-      const concurrencyEl = document.getElementById('input-scan-concurrency');
-      if (concurrencyEl) concurrencyEl.value = (c.scanConcurrency > 0) ? String(c.scanConcurrency) : '';
       const hashEl = document.getElementById('input-hash-enabled');
       if (hashEl) hashEl.checked = !!c.hashEnabled;
       const pmlEl = document.getElementById('input-predictive-ml');
@@ -274,12 +272,6 @@
     e.preventDefault();
     const action = document.querySelector('input[name="actionOnMalware"]:checked').value;
     const quarantinePath = document.getElementById('input-quarantine-path').value.trim();
-    const concurrencyEl = document.getElementById('input-scan-concurrency');
-    let scanConcurrency = 0;
-    if (concurrencyEl && concurrencyEl.value.trim() !== '') {
-      const n = parseInt(concurrencyEl.value.trim(), 10);
-      if (!isNaN(n) && n >= 1 && n <= 64) scanConcurrency = n;
-    }
     const hashEl = document.getElementById('input-hash-enabled');
     const hashEnabled = !!(hashEl && hashEl.checked);
     const pmlEl = document.getElementById('input-predictive-ml');
@@ -297,7 +289,6 @@
         body: JSON.stringify({
           actionOnMalware: action,
           quarantinePath: quarantinePath,
-          scanConcurrency: scanConcurrency,
           maxConcurrentScans: maxConcurrentScans,
           hashEnabled: hashEnabled,
           predictiveML: predictiveML
