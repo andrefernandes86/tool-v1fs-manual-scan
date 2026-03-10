@@ -1,0 +1,138 @@
+# Build, optionally scan with Trend Vision One (TMAS), publish to Docker Hub,
+# and post a formatted report on the GitHub Actions summary.
+# Nothing blocks the pipeline: TMAS failures are reported but do not fail the job.
+
+name: Build, Scan & Publish
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: v1fs-scanner
+
+jobs:
+  build-scan-publish:
+    name: Build · Scan · Publish · Report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:build
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trend Vision One (TMAS) scan
+        id: tmas-scan
+        if: ${{ secrets.TMAS_API_KEY != '' }}
+        continue-on-error: true
+        uses: trendmicro/tmas-scan-action@v1
+        with:
+          tmasApiKey: ${{ secrets.TMAS_API_KEY }}
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          artifact: "dir:."
+          vulnerabilitiesScan: "true"
+          malwareScan: "true"
+          secretsScan: "true"
+          additionalArgs: "--saveSBOM"
+          # Scans repo source; non-blocking so pipeline always continues
+
+      - name: Log in to Docker Hub
+        id: docker-login
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Tag and push to Docker Hub
+        id: push
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        run: |
+          REPO="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}"
+          docker tag ${{ env.IMAGE_NAME }}:build "$REPO:latest"
+          docker tag ${{ env.IMAGE_NAME }}:build "$REPO:${{ github.sha }}"
+          docker push "$REPO:latest"
+          docker push "$REPO:${{ github.sha }}"
+          echo "repo=$REPO" >> $GITHUB_OUTPUT
+          echo "sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Pipeline report
+        id: report
+        if: always()
+        run: |
+          BUILD_OUTCOME="${{ steps.build.outcome }}"
+          TMAS_OUTCOME="${{ steps.tmas-scan.outcome }}"
+          LOGIN_OUTCOME="${{ steps.docker-login.outcome }}"
+          PUSH_OUTCOME="${{ steps.push.outcome }}"
+
+          status_icon() {
+            case "$1" in success) echo "✅";; failure) echo "❌";; skipped) echo "⏭️";; *) echo "⚠️";; esac
+          }
+          status_text() {
+            case "$1" in success) echo "**Success**";; failure) echo "**Failed**";; skipped) echo "**Skipped**";; *) echo "**$1**";; esac
+          }
+
+          REPO="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}"
+          GIT_SHA="${{ github.sha }}"
+          REPORT_URL=""
+          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] && [ "$PUSH_OUTCOME" = "success" ]; then
+            REPORT_URL="https://hub.docker.com/r/$REPO/tags"
+          fi
+
+          {
+            echo "# 📋 V1 File Security Scanner — Pipeline Report"
+            echo ""
+            echo "| Step | Status | Details |"
+            echo "|------|--------|--------|"
+          } >> $GITHUB_STEP_SUMMARY
+
+          echo "| **Build** | $(status_icon "$BUILD_OUTCOME") $(status_text "$BUILD_OUTCOME") | Docker image built |" >> $GITHUB_STEP_SUMMARY
+          if [ "$TMAS_OUTCOME" = "skipped" ]; then
+            echo "| **Trend Vision One (TMAS)** | ⏭️ **Skipped** | \`TMAS_API_KEY\` not set — add secret to enable |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| **Trend Vision One (TMAS)** | $(status_icon "$TMAS_OUTCOME") $(status_text "$TMAS_OUTCOME") | Vulnerability + SBOM scan (non-blocking) |" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "$LOGIN_OUTCOME" = "skipped" ]; then
+            echo "| **Docker Hub login** | ⏭️ **Skipped** | \`DOCKERHUB_USERNAME\` / \`DOCKERHUB_TOKEN\` not set |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Publish to Docker Hub** | ⏭️ **Skipped** | Add Docker Hub secrets to publish |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| **Docker Hub login** | $(status_icon "$LOGIN_OUTCOME") $(status_text "$LOGIN_OUTCOME") | Logged in |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Publish to Docker Hub** | $(status_icon "$PUSH_OUTCOME") $(status_text "$PUSH_OUTCOME") | \`$REPO\` |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          {
+            echo ""
+            echo "---"
+            echo "### 📦 Image"
+            echo ""
+            echo "**Tags:** \`latest\`, \`$GIT_SHA\`"
+          } >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "$REPORT_URL" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Docker Hub:** [$REPO]($REPORT_URL)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "docker pull $REPO:latest" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          {
+            echo ""
+            echo "---"
+            echo "*Pipeline is non-blocking: TMAS findings are reported in Vision One and here but do not fail the job. Configure secrets in **Settings → Secrets and variables → Actions** (see \`.github/SECRETS.md\`).*"
+          } >> $GITHUB_STEP_SUMMARY
