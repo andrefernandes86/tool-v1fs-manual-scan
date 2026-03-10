@@ -86,6 +86,7 @@ type ScanOptions struct {
 	QuarantinePath  string
 	Concurrency     int  // number of files scanned in parallel; 0 = use DefaultConcurrency
 	GenerateHashes  bool // when true, compute SHA-256 for malicious files
+	PredictiveML    bool // when true, enable predictive machine learning (PML) hints
 }
 
 func (s *TaskStore) Create(path string) *Task {
@@ -224,6 +225,10 @@ func (s *TaskStore) RunScan(taskID string, rootPath string, apiKey, region strin
 	}
 
 	tags := []string{"v1fs-scanner"}
+	if opts.PredictiveML {
+		// Align with vendor docs: enable PML and feedback flags.
+		tags = append(tags, "pml:true", "feedback:true")
+	}
 	concurrency := opts.Concurrency
 	if concurrency <= 0 {
 		concurrency = DefaultConcurrency

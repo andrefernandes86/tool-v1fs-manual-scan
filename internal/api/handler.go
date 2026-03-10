@@ -47,6 +47,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/test-samples" && r.Method == http.MethodGet:
 		h.getTestSamples(w, r)
 		return
+	case r.URL.Path == "/api/test-scan" && r.Method == http.MethodPost:
+		h.startTestScan(w, r)
+		return
 	case r.URL.Path == "/api/dirs" && r.Method == http.MethodGet:
 		h.listDirs(w, r)
 		return
@@ -97,6 +100,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 	concurrency := h.cfg.GetScanConcurrency()
 	maxScans := h.cfg.GetMaxConcurrentScans()
 	hashEnabled := h.cfg.GetHashEnabled()
+	predictiveML := h.cfg.GetPredictiveML()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"apiKeySet":          apiKey != "",
@@ -107,6 +111,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"scanConcurrency":    concurrency,
 		"maxConcurrentScans": maxScans,
 		"hashEnabled":        hashEnabled,
+		"predictiveML":       predictiveML,
 	})
 }
 
@@ -148,6 +153,7 @@ func (h *Handler) saveScanAction(w http.ResponseWriter, r *http.Request) {
 		ScanConcurrency    *int   `json:"scanConcurrency"`
 		MaxConcurrentScans *int   `json:"maxConcurrentScans"`
 		HashEnabled        *bool  `json:"hashEnabled"`
+		PredictiveML       *bool  `json:"predictiveML"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -173,13 +179,16 @@ func (h *Handler) saveScanAction(w http.ResponseWriter, r *http.Request) {
 		if n < 0 {
 			n = 0
 		}
-		if n > 32 {
-			n = 32
+		if n > 1000 {
+			n = 1000
 		}
 		h.cfg.SetMaxConcurrentScans(n)
 	}
 	if body.HashEnabled != nil {
 		h.cfg.SetHashEnabled(*body.HashEnabled)
+	}
+	if body.PredictiveML != nil {
+		h.cfg.SetPredictiveML(*body.PredictiveML)
 	}
 	if err := h.cfg.Save(h.configPath); err != nil {
 		http.Error(w, "failed to save config", http.StatusInternalServerError)
@@ -261,6 +270,7 @@ func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 		QuarantinePath:  quarantinePath,
 		Concurrency:     concurrency,
 		GenerateHashes:  h.cfg.GetHashEnabled(),
+		PredictiveML:    h.cfg.GetPredictiveML(),
 	}
 	task := h.store.Create(path)
 	go h.store.RunScan(task.ID, path, apiKey, region, opts)

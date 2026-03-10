@@ -14,6 +14,7 @@ type Config struct {
 	ScanConcurrency    int    `json:"scanConcurrency,omitempty"`    // 0 = use default (8)
 	MaxConcurrentScans int    `json:"maxConcurrentScans,omitempty"` // 0 = unlimited
 	HashEnabled        bool   `json:"hashEnabled,omitempty"`        // generate hashes for malicious files in reports
+	PredictiveML       bool   `json:"predictiveML,omitempty"`       // enable predictive machine learning (PML)
 	mu                 sync.RWMutex
 }
 
@@ -70,6 +71,12 @@ func (c *Config) GetHashEnabled() bool {
 	return c.HashEnabled
 }
 
+func (c *Config) GetPredictiveML() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.PredictiveML
+}
+
 func (c *Config) SetScanAction(action, quarantinePath string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -96,6 +103,12 @@ func (c *Config) SetHashEnabled(enabled bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.HashEnabled = enabled
+}
+
+func (c *Config) SetPredictiveML(enabled bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.PredictiveML = enabled
 }
 
 func (c *Config) Save(path string) error {

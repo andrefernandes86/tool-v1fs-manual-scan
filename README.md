@@ -98,7 +98,8 @@ In **Settings**, under **Actions on detection**:
 - **Delete** — Permanently delete detected malicious files.
 - **Simultaneous files to scan** — Number of files scanned in parallel (1–64). Leave empty for the default (8). Higher values speed up scans but use more API quota. You can also set this via the `V1FS_SCAN_CONCURRENCY` environment variable; the Settings value takes precedence when non-zero.
 - **Generate file hashes for malicious files** — When enabled, the scanner computes a SHA-256 hash for each malicious file and includes it in the PDF report. This adds extra I/O and CPU work, so disabling it keeps scans faster.
-- **Maximum simultaneous scans** — How many scan jobs can run at the same time. Set `0` for unlimited. Lower values can protect system resources and API quota when multiple scans are triggered.
+- **Enable predictive machine learning (PML)** — When enabled, the scanner sends hints to Trend Vision One to use Predictive Machine Learning for file evaluation, as described in the vendor documentation.
+- **Maximum simultaneous scans** — How many scan jobs can run at the same time. Set `0` for unlimited (up to a maximum of 1000). Lower values can protect system resources and API quota when multiple scans are triggered.
 
 Click **Save actions** after changing.
 

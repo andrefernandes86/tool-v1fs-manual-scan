@@ -48,6 +48,12 @@
           <h2>Malicious files detected</h2>
           <div id="malicious-list" class="malicious-list"></div>
         </div>
+        <div id="scan-details" class="card scan-details hidden">
+          <h2>Scan details</h2>
+          <p>Effective throughput: <strong id="stat-fps">—</strong> files/second</p>
+          <p>Files scanned: <strong id="stat-scanned">0</strong> / <strong id="stat-total">0</strong></p>
+          <p>Estimated remaining time: <strong id="stat-eta">—</strong></p>
+        </div>
       </section>
 
       <section id="pane-settings" class="pane">
@@ -107,9 +113,12 @@
             <label class="checkbox-label">
               <input type="checkbox" id="input-hash-enabled"> Generate SHA-256 hashes for malicious files (slower scans)
             </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="input-predictive-ml"> Enable predictive machine learning (PML)
+            </label>
             <label>
               Maximum simultaneous scans
-              <input type="number" id="input-max-concurrent-scans" min="0" max="32" placeholder="0 = unlimited" title="Maximum number of scans that can run at the same time (0 = unlimited).">
+              <input type="number" id="input-max-concurrent-scans" min="0" max="1000" placeholder="0 = unlimited" title="Maximum number of scans that can run at the same time (0 = unlimited).">
             </label>
             <p class="hint">Control how many scan jobs can run at once (0 = unlimited). Reducing this can protect API quota and system load when multiple users start scans.</p>
             <button type="submit" class="btn btn-primary">Save actions</button>
@@ -123,7 +132,15 @@
             <li><strong>hello.txt</strong> — Plain text file with "Hello World" (should be clean)</li>
           </ul>
           <p class="test-samples-path">Path in container: <code id="test-samples-path">/data/test-samples</code></p>
-          <button type="button" id="btn-test-scan" class="btn btn-primary">Run test scan</button>
+          <label>
+            Destination folder for test files
+            <input type="text" id="input-test-dest" placeholder="/data/test-target">
+          </label>
+          <p class="hint">The chosen sample file will be copied into this folder and a scan will start on that folder.</p>
+          <div class="test-buttons">
+            <button type="button" id="btn-test-eicar" class="btn btn-primary">Submit EICAR test file</button>
+            <button type="button" id="btn-test-clean" class="btn">Submit clean test file</button>
+          </div>
         </div>
       </section>
 

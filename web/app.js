@@ -151,6 +151,29 @@
       document.getElementById('malicious-count').textContent = (data.malicious && data.malicious.length) ? data.malicious.length : 0;
       const pct = data.totalFiles ? (100 * data.scannedCount / data.totalFiles) : 0;
       document.getElementById('progress-fill').style.width = pct + '%';
+      const detailsEl = document.getElementById('scan-details');
+      if (detailsEl && scanStartedAt) {
+        const finishedAtMs = data.finishedAt ? new Date(data.finishedAt).getTime() : null;
+        const nowMs = finishedAtMs || Date.now();
+        const elapsedSec = Math.max(0, (nowMs - scanStartedAt) / 1000);
+        let fps = 0;
+        if (elapsedSec > 0) {
+          fps = data.scannedCount / elapsedSec;
+        }
+        detailsEl.classList.remove('hidden');
+        document.getElementById('stat-fps').textContent = fps ? fps.toFixed(1) : '—';
+        document.getElementById('stat-scanned').textContent = data.scannedCount;
+        document.getElementById('stat-total').textContent = data.totalFiles;
+        let etaText = '—';
+        if (fps > 0 && data.totalFiles > data.scannedCount) {
+          const remaining = data.totalFiles - data.scannedCount;
+          const secLeft = remaining / fps;
+          const m = Math.floor(secLeft / 60);
+          const s = Math.floor(secLeft % 60);
+          etaText = m + 'm ' + (s < 10 ? '0' + s : s);
+        }
+        document.getElementById('stat-eta').textContent = etaText;
+      }
 
       const listEl = document.getElementById('malicious-list');
       listEl.innerHTML = '';
@@ -229,6 +252,8 @@
       if (concurrencyEl) concurrencyEl.value = (c.scanConcurrency > 0) ? String(c.scanConcurrency) : '';
       const hashEl = document.getElementById('input-hash-enabled');
       if (hashEl) hashEl.checked = !!c.hashEnabled;
+      const pmlEl = document.getElementById('input-predictive-ml');
+      if (pmlEl) pmlEl.checked = !!c.predictiveML;
       const maxScansEl = document.getElementById('input-max-concurrent-scans');
       if (maxScansEl) maxScansEl.value = (typeof c.maxConcurrentScans === 'number' && c.maxConcurrentScans > 0) ? String(c.maxConcurrentScans) : '';
       toggleQuarantinePath();
@@ -257,11 +282,13 @@
     }
     const hashEl = document.getElementById('input-hash-enabled');
     const hashEnabled = !!(hashEl && hashEl.checked);
+    const pmlEl = document.getElementById('input-predictive-ml');
+    const predictiveML = !!(pmlEl && pmlEl.checked);
     const maxScansEl = document.getElementById('input-max-concurrent-scans');
     let maxConcurrentScans = 0;
     if (maxScansEl && maxScansEl.value.trim() !== '') {
       const n = parseInt(maxScansEl.value.trim(), 10);
-      if (!isNaN(n) && n >= 0 && n <= 32) maxConcurrentScans = n;
+      if (!isNaN(n) && n >= 0 && n <= 1000) maxConcurrentScans = n;
     }
     try {
       await api('/api/config/scan-action', {
@@ -272,7 +299,8 @@
           quarantinePath: quarantinePath,
           scanConcurrency: scanConcurrency,
           maxConcurrentScans: maxConcurrentScans,
-          hashEnabled: hashEnabled
+          hashEnabled: hashEnabled,
+          predictiveML: predictiveML
         })
       });
       alert('Actions saved.');
@@ -320,15 +348,17 @@
   }
 
   document.querySelector('.tab[data-tab="settings"]').addEventListener('click', loadTestSamplesPath);
-
-  document.getElementById('btn-test-scan').addEventListener('click', async () => {
+  async function runTestSample(sample) {
+    const destDir = document.getElementById('input-test-dest').value.trim();
+    if (!destDir) {
+      alert('Destination folder is required.');
+      return;
+    }
     try {
-      const data = await api('/api/test-samples');
-      const path = data.path || '/data/test-samples';
-      const { taskId } = await api('/api/scan/start', {
+      const { taskId } = await api('/api/test-scan', {
         method: 'POST',
         json: true,
-        body: JSON.stringify({ path: path })
+        body: JSON.stringify({ sample, destDir })
       });
       currentTaskId = taskId;
       scanStartedAt = null;
@@ -343,5 +373,14 @@
     } catch (e) {
       alert('Failed to start test scan: ' + e.message + '. Configure API key and region first.');
     }
-  });
+  }
+
+  const btnEicar = document.getElementById('btn-test-eicar');
+  if (btnEicar) {
+    btnEicar.addEventListener('click', () => runTestSample('eicar'));
+  }
+  const btnClean = document.getElementById('btn-test-clean');
+  if (btnClean) {
+    btnClean.addEventListener('click', () => runTestSample('clean'));
+  }
 })();
