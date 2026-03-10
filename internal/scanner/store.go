@@ -37,6 +37,7 @@ func (s *TaskStore) ReportsDir() string {
 type Task struct {
 	ID           string       `json:"id"`
 	Path         string       `json:"path"`
+	ReportName   string       `json:"reportName,omitempty"`
 	StartedAt    time.Time    `json:"startedAt"`
 	FinishedAt   *time.Time   `json:"finishedAt,omitempty"`
 	TotalFiles   int          `json:"totalFiles"`
@@ -183,6 +184,12 @@ func (t *Task) Finish(err error) {
 	default:
 		close(t.done)
 	}
+}
+
+func (t *Task) SetReportName(name string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.ReportName = name
 }
 
 func (t *Task) Snapshot() Task {
@@ -385,6 +392,9 @@ func (s *TaskStore) writePDF(taskID string, t *Task) (string, error) {
 	pdf.SetFont("Helvetica", "B", 16)
 	pdf.CellFormat(0, 10, "V1 File Security Scan Report", "", 1, "L", false, 0, "")
 	pdf.SetFont("Helvetica", "", 10)
+	if snap.ReportName != "" {
+		pdf.CellFormat(0, 6, "Report name: "+snap.ReportName, "", 1, "L", false, 0, "")
+	}
 	pdf.CellFormat(0, 6, "Scan path: "+snap.Path, "", 1, "L", false, 0, "")
 	pdf.CellFormat(0, 6, "Started: "+snap.StartedAt.Format(time.RFC3339), "", 1, "L", false, 0, "")
 	if snap.FinishedAt != nil {

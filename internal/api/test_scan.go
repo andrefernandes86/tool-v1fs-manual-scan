@@ -15,8 +15,9 @@ import (
 // directory chosen by the user and starts a scan on that directory.
 func (h *Handler) startTestScan(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Sample  string `json:"sample"`  // "eicar" or "clean"
-		DestDir string `json:"destDir"` // where to drop the file
+		Sample     string `json:"sample"`     // "eicar" or "clean"
+		DestDir    string `json:"destDir"`    // where to drop the file
+		ReportName string `json:"reportName"` // optional friendly name
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -101,6 +102,9 @@ func (h *Handler) startTestScan(w http.ResponseWriter, r *http.Request) {
 		PredictiveML:    h.cfg.GetPredictiveML(),
 	}
 	task := h.store.Create(destDir)
+	if rn := strings.TrimSpace(body.ReportName); rn != "" {
+		task.SetReportName(rn)
+	}
 	go h.store.RunScan(task.ID, destDir, apiKey, region, opts)
 
 	w.Header().Set("Content-Type", "application/json")

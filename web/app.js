@@ -85,10 +85,13 @@
   document.getElementById('btn-start-scan').addEventListener('click', async () => {
     if (!selectedPath) return;
     try {
+      const defaultName = selectedPath || '';
+      const reportNameInput = window.prompt('Optional report name to help identify this scan later:', defaultName);
+      const reportName = reportNameInput ? reportNameInput.trim() : '';
       const { taskId } = await api('/api/scan/start', {
         method: 'POST',
         json: true,
-        body: JSON.stringify({ path: selectedPath })
+        body: JSON.stringify({ path: selectedPath, reportName })
       });
       currentTaskId = taskId;
       scanStartedAt = null;
@@ -311,11 +314,12 @@
       }
       const table = document.createElement('table');
       table.className = 'history-table';
-      table.innerHTML = '<thead><tr><th>Path</th><th>Started</th><th>Files</th><th>Malicious</th><th>Report</th><th>Error</th></tr></thead><tbody></tbody>';
+      table.innerHTML = '<thead><tr><th>Report name</th><th>Path</th><th>Started</th><th>Files</th><th>Malicious</th><th>Report</th><th>Error</th></tr></thead><tbody></tbody>';
       const tbody = table.querySelector('tbody');
       list.forEach(row => {
         const tr = document.createElement('tr');
         tr.innerHTML =
+          '<td>' + escapeHtml(row.reportName || '') + '</td>' +
           '<td>' + escapeHtml(row.path) + '</td>' +
           '<td>' + escapeHtml(row.startedAt) + '</td>' +
           '<td>' + row.scannedCount + ' / ' + row.totalFiles + '</td>' +
@@ -345,11 +349,14 @@
       alert('Destination folder is required.');
       return;
     }
+    const defaultName = (sample === 'eicar' ? 'EICAR test' : 'Clean test') + ' - ' + destDir;
+    const reportNameInput = window.prompt('Optional report name for this test scan:', defaultName);
+    const reportName = reportNameInput ? reportNameInput.trim() : '';
     try {
       const { taskId } = await api('/api/test-scan', {
         method: 'POST',
         json: true,
-        body: JSON.stringify({ sample, destDir })
+        body: JSON.stringify({ sample, destDir, reportName })
       });
       currentTaskId = taskId;
       scanStartedAt = null;

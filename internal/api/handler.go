@@ -220,7 +220,8 @@ func (h *Handler) listDirs(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Path string `json:"path"`
+		Path       string `json:"path"`
+		ReportName string `json:"reportName"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -273,6 +274,9 @@ func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 		PredictiveML:    h.cfg.GetPredictiveML(),
 	}
 	task := h.store.Create(path)
+	if rn := strings.TrimSpace(body.ReportName); rn != "" {
+		task.SetReportName(rn)
+	}
 	go h.store.RunScan(task.ID, path, apiKey, region, opts)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -299,6 +303,7 @@ func (h *Handler) scanStatus(w http.ResponseWriter, r *http.Request, id string) 
 		"finishedAt":   snap.FinishedAt,
 		"totalFiles":   snap.TotalFiles,
 		"scannedCount": snap.ScannedCount,
+		"reportName":   snap.ReportName,
 		"currentFile":  snap.CurrentFile,
 		"malicious":    snap.Malicious,
 		"error":        snap.Error,
@@ -309,12 +314,13 @@ func (h *Handler) scanStatus(w http.ResponseWriter, r *http.Request, id string) 
 func (h *Handler) scanHistory(w http.ResponseWriter, r *http.Request) {
 	list := h.store.List()
 	type item struct {
-		ID           string       `json:"id"`
-		Path         string       `json:"path"`
-		StartedAt    string       `json:"startedAt"`
-		FinishedAt   *string      `json:"finishedAt,omitempty"`
-		TotalFiles   int          `json:"totalFiles"`
-		ScannedCount int          `json:"scannedCount"`
+		ID           string  `json:"id"`
+		Path         string  `json:"path"`
+		ReportName   string  `json:"reportName,omitempty"`
+		StartedAt    string  `json:"startedAt"`
+		FinishedAt   *string `json:"finishedAt,omitempty"`
+		TotalFiles   int     `json:"totalFiles"`
+		ScannedCount int     `json:"scannedCount"`
 		MaliciousCount int        `json:"maliciousCount"`
 		Error        string       `json:"error,omitempty"`
 		ReportPath   string       `json:"reportPath,omitempty"`
@@ -332,6 +338,7 @@ func (h *Handler) scanHistory(w http.ResponseWriter, r *http.Request) {
 		out = append(out, item{
 			ID:             t.ID,
 			Path:           t.Path,
+			ReportName:     t.ReportName,
 			StartedAt:      t.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
 			FinishedAt:     ptrOrNil(fin),
 			TotalFiles:     t.TotalFiles,
