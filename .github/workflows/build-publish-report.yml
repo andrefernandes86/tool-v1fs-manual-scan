@@ -1,5 +1,5 @@
-# Multi-job workflow: build → push-to-dockerhub, vulnerabilities-scan, … → malware-scan (after vuln) → report
-# Produces the native GitHub Actions flowchart view. No AWS, no deploy.
+# Linear pipeline: build → push → vulnerabilities-scan → malware-scan → secrets-scan → sbom-scan → report
+# Simple timeline; report aggregates all findings with full details.
 
 name: Build, Scan & Publish
 
@@ -68,7 +68,7 @@ jobs:
 
   vulnerabilities-scan:
     name: vulnerabilities-scan
-    needs: build
+    needs: push-to-dockerhub
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -138,7 +138,7 @@ jobs:
 
   secrets-scan:
     name: secrets-scan
-    needs: build
+    needs: malware-scan
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -192,7 +192,7 @@ jobs:
 
   sbom-scan:
     name: sbom-scan
-    needs: build
+    needs: secrets-scan
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -243,7 +243,7 @@ jobs:
 
   malware-scan:
     name: malware-scan
-    needs: [build, vulnerabilities-scan]
+    needs: vulnerabilities-scan
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -306,8 +306,20 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Summary
+      - name: Download scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-scan-results'
+          path: scan-artifacts
+          merge-multiple: false
+        continue-on-error: true
+      - name: Generate full report
         run: |
+          sudo apt-get update -y && sudo apt-get install -y jq
+          mkdir -p scan-artifacts
+          SUM="$GITHUB_STEP_SUMMARY"
+          status_icon() { case "$1" in success) echo "✅";; failure) echo "❌";; skipped) echo "⏭️";; *) echo "⚠️";; esac; }
+
           BUILD_RESULT="${{ needs.build.result }}"
           PUSH_RESULT="${{ needs.push-to-dockerhub.result }}"
           VULN_RESULT="${{ needs.vulnerabilities-scan.result }}"
@@ -316,53 +328,160 @@ jobs:
           MALWARE_RESULT="${{ needs.malware-scan.result }}"
           PUSH_REPO="${{ needs.push-to-dockerhub.outputs.repo }}"
 
-          status_icon() {
-            case "$1" in success) echo "✅";; failure) echo "❌";; skipped) echo "⏭️";; *) echo "⚠️";; esac
-          }
-
           {
             echo "# 📋 Pipeline Report"
             echo ""
-            echo "**build-publish-report.yml** · \`on: push\` / \`workflow_dispatch\`"
+            echo "**build-publish-report.yml** · Linear pipeline: build → push → vuln → malware → secrets → sbom → report"
             echo ""
-            echo "## Flow"
+            echo "## Timeline"
             echo ""
-            echo "| build | push-to-dockerhub | vulnerabilities-scan | secrets-scan | sbom-scan | malware-scan | report |"
-            echo "| $(status_icon "$BUILD_RESULT") | $(status_icon "$PUSH_RESULT") | $(status_icon "$VULN_RESULT") | $(status_icon "$SECRETS_RESULT") | $(status_icon "$SBOM_RESULT") | $(status_icon "$MALWARE_RESULT") | ✅ |"
+            echo "| build | push | vulnerabilities | malware | secrets | sbom | report |"
+            echo "| $(status_icon "$BUILD_RESULT") | $(status_icon "$PUSH_RESULT") | $(status_icon "$VULN_RESULT") | $(status_icon "$MALWARE_RESULT") | $(status_icon "$SECRETS_RESULT") | $(status_icon "$SBOM_RESULT") | ✅ |"
             echo ""
             echo "---"
             echo "## 📦 Docker Hub"
             echo ""
-          } >> $GITHUB_STEP_SUMMARY
-
+          } >> "$SUM"
           if [ -n "$PUSH_REPO" ] && [ "$PUSH_RESULT" = "success" ]; then
-            {
-              echo "✅ **Image published** · [\`$PUSH_REPO\`](https://hub.docker.com/r/$PUSH_REPO/tags)"
-              echo ""
-              echo "\`docker pull $PUSH_REPO:latest\`"
-              echo ""
-            } >> $GITHUB_STEP_SUMMARY
+            { echo "✅ **Image published** · [\`$PUSH_REPO\`](https://hub.docker.com/r/$PUSH_REPO/tags)"; echo ""; echo "\`docker pull $PUSH_REPO:latest\`"; echo ""; } >> "$SUM"
           else
-            {
-              echo "⏭️ **Not published** · Set variable \`PUBLISH_TO_DOCKERHUB=true\` and secrets \`DOCKERHUB_USERNAME\`, \`DOCKERHUB_TOKEN\`."
-              echo ""
-            } >> $GITHUB_STEP_SUMMARY
+            { echo "⏭️ **Not published** · Set variable \`PUBLISH_TO_DOCKERHUB=true\` and variable \`DOCKERHUB_USERNAME\` + secret \`DOCKERHUB_TOKEN\`."; echo ""; } >> "$SUM"
           fi
 
-          {
-            echo "---"
-            echo "## 🔒 Trend Vision One (TMAS)"
-            echo ""
-            echo "| Scan | Status |"
-            echo "|------|--------|"
-            echo "| Vulnerabilities | $(status_icon "$VULN_RESULT") |"
-            echo "| Secrets | $(status_icon "$SECRETS_RESULT") |"
-            echo "| SBOM | $(status_icon "$SBOM_RESULT") |"
-            echo "| Malware | $(status_icon "$MALWARE_RESULT") |"
-            echo ""
-            echo "Each scan job writes a **detailed report** to its own **Summary** tab (severity counts, findings tables, status). Open **vulnerabilities-scan**, **secrets-scan**, **sbom-scan**, or **malware-scan** above to view."
-            echo ""
-            echo "📥 **Artifacts:** \`vulnerability-scan-results\`, \`secrets-scan-results\`, \`sbom-scan-results\`, \`malware-scan-results\` (full JSON + Markdown)."
-            echo ""
-            echo "---"
-          } >> $GITHUB_STEP_SUMMARY
+          # Helper: append vulnerability table from JSON (path as $1)
+          append_vuln_details() {
+            local f="$1"
+            [ ! -f "$f" ] && return
+            echo "### 🔍 Vulnerabilities (full list)" >> "$SUM"
+            echo "" >> "$SUM"
+            CRITICAL=$(jq -r '.vulnerabilities.criticalCount // .vulnerability.criticalCount // 0' "$f" 2>/dev/null || echo "0")
+            HIGH=$(jq -r '.vulnerabilities.highCount // .vulnerability.highCount // 0' "$f" 2>/dev/null || echo "0")
+            MEDIUM=$(jq -r '.vulnerabilities.mediumCount // .vulnerability.mediumCount // 0' "$f" 2>/dev/null || echo "0")
+            LOW=$(jq -r '.vulnerabilities.lowCount // .vulnerability.lowCount // 0' "$f" 2>/dev/null || echo "0")
+            echo "| Severity | Count |" >> "$SUM"
+            echo "|----------|-------|" >> "$SUM"
+            echo "| Critical | $CRITICAL |" >> "$SUM"
+            echo "| High | $HIGH |" >> "$SUM"
+            echo "| Medium | $MEDIUM |" >> "$SUM"
+            echo "| Low | $LOW |" >> "$SUM"
+            echo "" >> "$SUM"
+            echo "#### Findings by severity" >> "$SUM"
+            for sev in Critical High Medium Low; do
+              COUNT=$(jq -r "(.vulnerabilities.findings.${sev} // .vulnerability.findings.${sev} // []) | length" "$f" 2>/dev/null || echo "0")
+              [ "$COUNT" = "null" ] && COUNT=0
+              if [ "$COUNT" -gt 0 ] 2>/dev/null; then
+                echo "**${sev}**" >> "$SUM"
+                echo "" >> "$SUM"
+                echo "| ID | Package / Name | Fix / Version |" >> "$SUM"
+                echo "|----|----------------|---------------|" >> "$SUM"
+                jq -r --arg s "$sev" '
+                  (.vulnerabilities.findings[$s] // .vulnerability.findings[$s] // [])[] |
+                  [.id // "—", .name // .packageName // "—", .fix // .fixedVersion // "—"] | @tsv
+                ' "$f" 2>/dev/null | while IFS=$'\t' read -r id pkg fix; do
+                  echo "| $id | $pkg | $fix |" >> "$SUM"
+                done
+                echo "" >> "$SUM"
+              fi
+            done
+            echo "---" >> "$SUM"
+          }
+
+          # Helper: append malware details
+          append_malware_details() {
+            local f="$1"
+            [ ! -f "$f" ] && return
+            echo "### 🛡️ Malware scan (full list)" >> "$SUM"
+            echo "" >> "$SUM"
+            COUNT=$(jq -r '.malware.count // .malwareScan.findingsCount // (.malware.findings | length) // 0' "$f" 2>/dev/null || echo "0")
+            [ "$COUNT" = "null" ] && COUNT=0
+            echo "| Metric | Value |" >> "$SUM"
+            echo "|--------|-------|" >> "$SUM"
+            echo "| Malware detected | $COUNT |" >> "$SUM"
+            echo "" >> "$SUM"
+            if [ "$COUNT" -gt 0 ] 2>/dev/null; then
+              echo "| Name / Type | Path / Location |" >> "$SUM"
+              echo "|-------------|-----------------|" >> "$SUM"
+              jq -r '(.malware.findings // .malwareScan.findings // [])[]? | [.name // .malwareName // .type // "—", .path // .location // .filePath // "—"] | @tsv' "$f" 2>/dev/null | while IFS=$'\t' read -r name path; do
+                echo "| $name | $path |" >> "$SUM"
+              done
+            else
+              echo "✅ No malware detected." >> "$SUM"
+            fi
+            echo "" >> "$SUM"
+            echo "---" >> "$SUM"
+          }
+
+          # Helper: append secrets details
+          append_secrets_details() {
+            local f="$1"
+            [ ! -f "$f" ] && return
+            echo "### 🔒 Secrets scan (full list)" >> "$SUM"
+            echo "" >> "$SUM"
+            COUNT=$(jq -r '.secrets.unmitigatedFindingsCount // .secrets.findingsCount // 0' "$f" 2>/dev/null || echo "0")
+            [ "$COUNT" = "null" ] && COUNT=0
+            echo "| Metric | Value |" >> "$SUM"
+            echo "|--------|-------|" >> "$SUM"
+            echo "| Unmitigated secrets | $COUNT |" >> "$SUM"
+            echo "" >> "$SUM"
+            if [ "$COUNT" -gt 0 ] 2>/dev/null; then
+              echo "| Rule ID | Location / Path |" >> "$SUM"
+              echo "|----------|-----------------|" >> "$SUM"
+              jq -r '.secrets.findings.unmitigated[]? // .secrets.findings[]? | [.ruleID // .ruleId // "—", .location.path // .path // "—"] | @tsv' "$f" 2>/dev/null | while IFS=$'\t' read -r rule path; do
+                echo "| $rule | $path |" >> "$SUM"
+              done
+            else
+              echo "✅ No secrets found." >> "$SUM"
+            fi
+            echo "" >> "$SUM"
+            echo "---" >> "$SUM"
+          }
+
+          # Helper: append SBOM summary
+          append_sbom_details() {
+            local f="$1"
+            [ ! -f "$f" ] && return
+            echo "### 📋 SBOM scan" >> "$SUM"
+            echo "" >> "$SUM"
+            COMP=$(jq -r '.sbom.components | length // .components | length // 0' "$f" 2>/dev/null || echo "0")
+            [ "$COMP" = "null" ] && COMP="—"
+            echo "| Metric | Value |" >> "$SUM"
+            echo "|--------|-------|" >> "$SUM"
+            echo "| Components | $COMP |" >> "$SUM"
+            echo "" >> "$SUM"
+            echo "📥 Download the **sbom-scan-results** artifact for the full SBOM JSON." >> "$SUM"
+            echo "" >> "$SUM"
+            echo "---" >> "$SUM"
+          }
+
+          echo "## 🔒 Trend Vision One (TMAS) – detailed findings" >> "$SUM"
+          echo "" >> "$SUM"
+
+          VULN_JSON=""
+          for d in scan-artifacts/vulnerability-scan-results scan-artifacts/vulnerability-scan-results-*; do
+            [ -f "$d/tmas_scan_report.json" ] && VULN_JSON="$d/tmas_scan_report.json" && break
+          done
+          [ -z "$VULN_JSON" ] && [ -f scan-artifacts/vulnerability-scan-results/tmas_scan_report.json ] && VULN_JSON="scan-artifacts/vulnerability-scan-results/tmas_scan_report.json"
+          if [ -n "$VULN_JSON" ]; then append_vuln_details "$VULN_JSON"; else echo "⚠️ No vulnerability scan data (job failed or no artifact)." >> "$SUM"; echo "" >> "$SUM"; fi
+
+          MAL_JSON=""
+          for d in scan-artifacts/malware-scan-results scan-artifacts/malware-scan-results-*; do
+            [ -f "$d/tmas_scan_report.json" ] && MAL_JSON="$d/tmas_scan_report.json" && break
+          done
+          [ -z "$MAL_JSON" ] && [ -f scan-artifacts/malware-scan-results/tmas_scan_report.json ] && MAL_JSON="scan-artifacts/malware-scan-results/tmas_scan_report.json"
+          if [ -n "$MAL_JSON" ]; then append_malware_details "$MAL_JSON"; else echo "⚠️ No malware scan data (job failed or no artifact)." >> "$SUM"; echo "" >> "$SUM"; fi
+
+          SEC_JSON=""
+          for d in scan-artifacts/secrets-scan-results scan-artifacts/secrets-scan-results-*; do
+            [ -f "$d/tmas_scan_report.json" ] && SEC_JSON="$d/tmas_scan_report.json" && break
+          done
+          [ -z "$SEC_JSON" ] && [ -f scan-artifacts/secrets-scan-results/tmas_scan_report.json ] && SEC_JSON="scan-artifacts/secrets-scan-results/tmas_scan_report.json"
+          if [ -n "$SEC_JSON" ]; then append_secrets_details "$SEC_JSON"; else echo "⚠️ No secrets scan data (job failed or no artifact)." >> "$SUM"; echo "" >> "$SUM"; fi
+
+          SBOM_JSON=""
+          for d in scan-artifacts/sbom-scan-results scan-artifacts/sbom-scan-results-*; do
+            [ -f "$d/tmas_scan_report.json" ] && SBOM_JSON="$d/tmas_scan_report.json" && break
+          done
+          [ -z "$SBOM_JSON" ] && [ -f scan-artifacts/sbom-scan-results/tmas_scan_report.json ] && SBOM_JSON="scan-artifacts/sbom-scan-results/tmas_scan_report.json"
+          if [ -n "$SBOM_JSON" ]; then append_sbom_details "$SBOM_JSON"; else echo "⚠️ No SBOM scan data (job failed or no artifact)." >> "$SUM"; echo "" >> "$SUM"; fi
+
+          echo "📥 **Artifacts:** \`vulnerability-scan-results\`, \`malware-scan-results\`, \`secrets-scan-results\`, \`sbom-scan-results\` (full JSON + Markdown)." >> "$SUM"
