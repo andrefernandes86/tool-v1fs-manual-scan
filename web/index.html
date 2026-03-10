@@ -22,16 +22,25 @@
     <main class="panes">
       <section id="pane-scanner" class="pane active">
         <div class="card">
-          <h2>Folder to scan</h2>
+          <div class="card-header-row">
+            <div>
+              <h2>Folder to scan</h2>
+              <p class="hint">Browse to the folder you want to scan. The scan will include all files in this folder and its subfolders.</p>
+            </div>
+          </div>
           <div class="folder-picker">
             <div class="breadcrumb">
               <button type="button" class="breadcrumb-btn" data-path="">Root</button>
               <span id="breadcrumb-tail"></span>
             </div>
             <div id="dir-list" class="dir-list"></div>
-            <p class="selected-path">Selected: <strong id="selected-path">—</strong></p>
-            <button type="button" id="btn-select-folder" class="btn">Use this folder</button>
-            <button type="button" id="btn-start-scan" class="btn btn-primary" disabled>Start scan</button>
+            <div class="folder-actions">
+              <p class="selected-path">Selected folder: <strong id="selected-path">—</strong></p>
+              <div class="folder-actions-buttons">
+                <button type="button" id="btn-select-folder" class="btn btn-ghost">Use this folder</button>
+                <button type="button" id="btn-start-scan" class="btn btn-primary" disabled>Start scan</button>
+              </div>
+            </div>
           </div>
         </div>
 
