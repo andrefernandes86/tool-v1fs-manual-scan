@@ -39,7 +39,7 @@ jobs:
         id: tmas-scan
         if: vars.TMAS_SCAN_ENABLED == 'true'
         continue-on-error: true
-        uses: trendmicro/tmas-scan-action@v1
+        uses: trendmicro/tmas-scan-action@v3.1.1
         with:
           tmasApiKey: ${{ secrets.TMAS_API_KEY }}
           githubToken: ${{ secrets.GITHUB_TOKEN }}
