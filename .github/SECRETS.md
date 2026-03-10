@@ -10,11 +10,11 @@ Add these under **Settings → Secrets and variables → Actions**:
 
 | Variable | Value | Effect |
 |----------|--------|--------|
-| `TMAS_SCAN_ENABLED` | `true` | Run Trend Vision One (TMAS) scan. You must also set the `TMAS_API_KEY` secret. |
 | `PUBLISH_TO_DOCKERHUB` | `true` | Log in and push the image to Docker Hub. You must also set `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets. |
 
-**How to add:** Settings → Secrets and variables → Actions → **Variables** tab → **New repository variable**.  
-If you don't set these, the corresponding steps are skipped and the pipeline report will say so.
+**TMAS (Trend Vision One):** No variable needed. The TMAS scan runs on every workflow run; add the `TMAS_API_KEY` secret to authenticate. If the key is missing or invalid, the step fails and the report explains how to fix it.
+
+**How to add variables:** Settings → Secrets and variables → Actions → **Variables** tab → **New repository variable**.
 
 ---
 
@@ -42,5 +42,5 @@ The action uses `GITHUB_TOKEN` automatically for PR comments; no extra secret ne
 ## Summary
 
 - **To publish to Docker Hub:** Add variable `PUBLISH_TO_DOCKERHUB` = `true` and secrets `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
-- **To run TMAS scan:** Add variable `TMAS_SCAN_ENABLED` = `true` and secret `TMAS_API_KEY`.
-- **Build** always runs; no secrets or variables required. The report step always runs and shows the status of each step.
+- **To run TMAS scan:** Add secret `TMAS_API_KEY` (Vision One API key with "Run artifact scan"). The scan runs every time; the report will show Trend Micro results or a clear error if the key is missing/invalid.
+- **Build** always runs; no secrets or variables required.
