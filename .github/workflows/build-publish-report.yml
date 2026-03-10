@@ -330,13 +330,7 @@ jobs:
     needs: [build, push-to-dockerhub, vulnerabilities-scan, secrets-scan, sbom-scan, malware-scan]
     if: always()
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download scan artifacts
         uses: actions/download-artifact@v4
         with:
@@ -529,77 +523,3 @@ jobs:
           if [ -n "$SBOM_JSON" ]; then append_sbom_details "$SBOM_JSON"; else echo "⚠️ No SBOM scan data (job failed or no artifact)." >> "$SUM"; echo "" >> "$SUM"; fi
 
           echo "📥 **Artifacts:** \`vulnerability-scan-results\`, \`malware-scan-results\`, \`secrets-scan-results\`, \`sbom-scan-results\` (full JSON + Markdown)." >> "$SUM"
-
-      - name: Generate HTML report
-        env:
-          BUILD_RESULT: ${{ needs.build.result }}
-          PUSH_RESULT: ${{ needs.push-to-dockerhub.result }}
-          VULN_RESULT: ${{ needs.vulnerabilities-scan.result }}
-          SECRETS_RESULT: ${{ needs.secrets-scan.result }}
-          SBOM_RESULT: ${{ needs.sbom-scan.result }}
-          MALWARE_RESULT: ${{ needs.malware-scan.result }}
-          PUSH_REPO: ${{ needs.push-to-dockerhub.outputs.repo }}
-          MALWARE_FOUND: ${{ needs.malware-scan.outputs.malware_found }}
-        run: |
-          sudo apt-get update -y -qq && sudo apt-get install -y -qq jq
-          esc() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'; }
-          REPORT="$GITHUB_WORKSPACE/report.html"
-          VULN_JSON=""; MAL_JSON=""; SEC_JSON=""; SBOM_JSON=""
-          [ -f scan-artifacts/vulnerability-scan-results/tmas_scan_report.json ] && VULN_JSON="scan-artifacts/vulnerability-scan-results/tmas_scan_report.json"
-          [ -f scan-artifacts/malware-scan-results/tmas_scan_report.json ] && MAL_JSON="scan-artifacts/malware-scan-results/tmas_scan_report.json"
-          [ -f scan-artifacts/secrets-scan-results/tmas_scan_report.json ] && SEC_JSON="scan-artifacts/secrets-scan-results/tmas_scan_report.json"
-          [ -f scan-artifacts/sbom-scan-results/tmas_scan_report.json ] && SBOM_JSON="scan-artifacts/sbom-scan-results/tmas_scan_report.json"
-          si() { case "$1" in success) echo "✅";; failure) echo "❌";; *) echo "⏭️";; esac; }
-          { echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Pipeline Report</title><style>body{font-family:system-ui;max-width:1200px;margin:1rem auto;padding:0 1rem;} table{border-collapse:collapse;width:100%;} th,td{border:1px solid #ccc;padding:0.4rem;} th{background:#f0f0f0;} h1,h2,h3{margin-top:1rem;}</style></head><body><h1>Pipeline Report</h1><p>build → vuln → malware → secrets → sbom → push → report</p><h2>Timeline</h2><table><tr><th>build</th><th>vuln</th><th>malware</th><th>secrets</th><th>sbom</th><th>push</th><th>report</th></tr><tr><td>'; si "$BUILD_RESULT"; echo '</td><td>'; si "$VULN_RESULT"; echo '</td><td>'; si "$MALWARE_RESULT"; echo '</td><td>'; si "$SECRETS_RESULT"; echo '</td><td>'; si "$SBOM_RESULT"; echo '</td><td>'; si "$PUSH_RESULT"; echo '</td><td>✅</td></tr></table><h2>Docker Hub</h2>'; [ -n "$PUSH_REPO" ] && [ "$PUSH_RESULT" = "success" ] && echo "<p>✅ Published <a href=https://hub.docker.com/r/$PUSH_REPO/tags>$PUSH_REPO</a></p>" || echo "<p>⏭️ Not published</p>"; echo "<h2>TMAS findings</h2>"; } > "$REPORT"
-          if [ -n "$VULN_JSON" ]; then
-            echo "<h3>Vulnerabilities</h3><table><tr><th>CVE ID</th><th>Severity</th><th>Package</th><th>Fix</th><th>Description</th></tr>" >> "$REPORT"
-            for sev in Critical High Medium Low; do
-              while IFS=$'\t' read -r id s pkg fix desc; do
-                echo "<tr><td>$(esc "$id")</td><td>$(esc "$s")</td><td>$(esc "$pkg")</td><td>$(esc "$fix")</td><td>$(esc "$desc")</td></tr>" >> "$REPORT"
-              done < <(jq -r --arg s "$sev" '(.vulnerabilities.findings[$s] // .vulnerability.findings[$s] // [])[] | [.id // .cveId // "—", $s, (.name // .packageName // "—"), (.fix // .fixedVersion // "—"), ((.description // .summary // "—") | tostring | .[0:120])] | @tsv' "$VULN_JSON" 2>/dev/null)
-            done
-            echo "</table>" >> "$REPORT"
-          else
-            echo "<p>No vuln data.</p>" >> "$REPORT"
-          fi
-          if [ -n "$MAL_JSON" ]; then
-            C=$(jq -r '.malware.count // (.malware.findings | length) // 0' "$MAL_JSON" 2>/dev/null)
-            echo "<h3>Malware ($C)</h3>" >> "$REPORT"
-            if [ "${C:-0}" -gt 0 ] 2>/dev/null; then
-              echo "<table><tr><th>File name</th><th>Path</th><th>Malware name</th></tr>" >> "$REPORT"
-              while IFS=$'\t' read -r a b c; do echo "<tr><td>$(esc "$a")</td><td>$(esc "$b")</td><td>$(esc "$c")</td></tr>" >> "$REPORT"; done < <(jq -r '(.malware.findings // .malwareScan.findings // [])[]? | [.fileName // .name // "—", .path // .filePath // "—", .malwareName // .name // "—"] | @tsv' "$MAL_JSON" 2>/dev/null)
-              echo "</table>" >> "$REPORT"
-            else
-              echo "<p>✅ No malware detected.</p>" >> "$REPORT"
-            fi
-          else
-            echo "<p>No malware data.</p>" >> "$REPORT"
-          fi
-          if [ -n "$SEC_JSON" ]; then
-            C=$(jq -r '.secrets.unmitigatedFindingsCount // 0' "$SEC_JSON" 2>/dev/null)
-            echo "<h3>Secrets ($C)</h3>" >> "$REPORT"
-            if [ "${C:-0}" -gt 0 ] 2>/dev/null; then
-              echo "<table><tr><th>Rule ID</th><th>Location</th></tr>" >> "$REPORT"
-              while IFS=$'\t' read -r a b; do echo "<tr><td>$(esc "$a")</td><td>$(esc "$b")</td></tr>" >> "$REPORT"; done < <(jq -r '.secrets.findings.unmitigated[]? | [.ruleID // "—", .location.path // .path // "—"] | @tsv' "$SEC_JSON" 2>/dev/null)
-              echo "</table>" >> "$REPORT"
-            else
-              echo "<p>✅ No secrets found.</p>" >> "$REPORT"
-            fi
-          else
-            echo "<p>No secrets data.</p>" >> "$REPORT"
-          fi
-          if [ -n "$SBOM_JSON" ]; then
-            COMP=$(jq -r '.sbom.components | length // 0' "$SBOM_JSON" 2>/dev/null)
-            echo "<h3>SBOM ($COMP components)</h3><p>Download sbom-scan-results artifact for full JSON.</p>" >> "$REPORT"
-          else
-            echo "<p>No SBOM data.</p>" >> "$REPORT"
-          fi
-          echo "<p><small>Generated by build-publish-report.yml</small></p></body></html>" >> "$REPORT"
-          echo "Wrote report.html"
-
-      - name: Commit and push report
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add report.html
-          git diff --staged --quiet && echo "No changes" || (git commit -m "Update pipeline report [skip ci]" && git push)
