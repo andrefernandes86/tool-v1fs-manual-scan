@@ -7,12 +7,14 @@ import (
 )
 
 type Config struct {
-	APIKey          string `json:"apiKey,omitempty"`
-	Region          string `json:"region,omitempty"`
-	ActionOnMalware string `json:"actionOnMalware,omitempty"` // "log", "quarantine", "delete"
-	QuarantinePath  string `json:"quarantinePath,omitempty"`
-	ScanConcurrency int    `json:"scanConcurrency,omitempty"` // 0 = use default (8)
-	mu              sync.RWMutex
+	APIKey             string `json:"apiKey,omitempty"`
+	Region             string `json:"region,omitempty"`
+	ActionOnMalware    string `json:"actionOnMalware,omitempty"`    // "log", "quarantine", "delete"
+	QuarantinePath     string `json:"quarantinePath,omitempty"`
+	ScanConcurrency    int    `json:"scanConcurrency,omitempty"`    // 0 = use default (8)
+	MaxConcurrentScans int    `json:"maxConcurrentScans,omitempty"` // 0 = unlimited
+	HashEnabled        bool   `json:"hashEnabled,omitempty"`        // generate hashes for malicious files in reports
+	mu                 sync.RWMutex
 }
 
 func Load(path string) (*Config, error) {
@@ -56,6 +58,18 @@ func (c *Config) GetScanConcurrency() int {
 	return c.ScanConcurrency
 }
 
+func (c *Config) GetMaxConcurrentScans() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.MaxConcurrentScans
+}
+
+func (c *Config) GetHashEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.HashEnabled
+}
+
 func (c *Config) SetScanAction(action, quarantinePath string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -70,6 +84,18 @@ func (c *Config) SetScanConcurrency(n int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.ScanConcurrency = n
+}
+
+func (c *Config) SetMaxConcurrentScans(n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.MaxConcurrentScans = n
+}
+
+func (c *Config) SetHashEnabled(enabled bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.HashEnabled = enabled
 }
 
 func (c *Config) Save(path string) error {

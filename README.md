@@ -4,7 +4,7 @@ Docker-based web app that scans directories for malware using the [Trend Vision 
 
 ## Features
 
-- **Settings**: Configure and persist V1 API key, region, actions on detection (log only, move to quarantine, or delete), and number of simultaneous files to scan.
+- **Settings**: Configure and persist V1 API key, region, actions on detection (log only, move to quarantine, or delete), number of simultaneous files to scan, maximum simultaneous scans, and optional file hash generation.
 - **Folder browser**: Browse from root (`/`) and all directories; select a folder to scan (including mounted external drives).
 - **Scan**: Live progress (elapsed time, files scanned, malicious count, current file path); banner listing detected malware; PDF report at the end.
 - **History**: List of past scans with statistics and download links for reports.
@@ -97,6 +97,8 @@ In **Settings**, under **Actions on detection**:
 - **Move to quarantine folder** — Move detected files to a folder you choose. When selected, enter the **Quarantine folder path** (e.g. `/data/quarantine`). Use the Scanner tab to browse and copy a path if needed.
 - **Delete** — Permanently delete detected malicious files.
 - **Simultaneous files to scan** — Number of files scanned in parallel (1–64). Leave empty for the default (8). Higher values speed up scans but use more API quota. You can also set this via the `V1FS_SCAN_CONCURRENCY` environment variable; the Settings value takes precedence when non-zero.
+- **Generate file hashes for malicious files** — When enabled, the scanner computes a SHA-256 hash for each malicious file and includes it in the PDF report. This adds extra I/O and CPU work, so disabling it keeps scans faster.
+- **Maximum simultaneous scans** — How many scan jobs can run at the same time. Set `0` for unlimited. Lower values can protect system resources and API quota when multiple scans are triggered.
 
 Click **Save actions** after changing.
 

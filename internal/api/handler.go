@@ -95,14 +95,18 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 	apiKey, region := h.cfg.Get()
 	action, quarantinePath := h.cfg.GetScanAction()
 	concurrency := h.cfg.GetScanConcurrency()
+	maxScans := h.cfg.GetMaxConcurrentScans()
+	hashEnabled := h.cfg.GetHashEnabled()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"apiKeySet":       apiKey != "",
-		"region":          region,
-		"configured":      apiKey != "" && region != "",
-		"actionOnMalware": action,
-		"quarantinePath":  quarantinePath,
-		"scanConcurrency": concurrency,
+		"apiKeySet":          apiKey != "",
+		"region":             region,
+		"configured":         apiKey != "" && region != "",
+		"actionOnMalware":    action,
+		"quarantinePath":     quarantinePath,
+		"scanConcurrency":    concurrency,
+		"maxConcurrentScans": maxScans,
+		"hashEnabled":        hashEnabled,
 	})
 }
 
@@ -139,9 +143,11 @@ func (h *Handler) saveConfig(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) saveScanAction(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		ActionOnMalware string `json:"actionOnMalware"`
-		QuarantinePath  string `json:"quarantinePath"`
-		ScanConcurrency *int   `json:"scanConcurrency"`
+		ActionOnMalware    string `json:"actionOnMalware"`
+		QuarantinePath     string `json:"quarantinePath"`
+		ScanConcurrency    *int   `json:"scanConcurrency"`
+		MaxConcurrentScans *int   `json:"maxConcurrentScans"`
+		HashEnabled        *bool  `json:"hashEnabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -161,6 +167,19 @@ func (h *Handler) saveScanAction(w http.ResponseWriter, r *http.Request) {
 			n = 64
 		}
 		h.cfg.SetScanConcurrency(n)
+	}
+	if body.MaxConcurrentScans != nil {
+		n := *body.MaxConcurrentScans
+		if n < 0 {
+			n = 0
+		}
+		if n > 32 {
+			n = 32
+		}
+		h.cfg.SetMaxConcurrentScans(n)
+	}
+	if body.HashEnabled != nil {
+		h.cfg.SetHashEnabled(*body.HashEnabled)
 	}
 	if err := h.cfg.Save(h.configPath); err != nil {
 		http.Error(w, "failed to save config", http.StatusInternalServerError)
@@ -222,6 +241,13 @@ func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "quarantine path required when action is 'Move to quarantine'; set it in Settings", http.StatusBadRequest)
 		return
 	}
+	// Enforce maximum number of concurrent scans if configured (>0).
+	if max := h.cfg.GetMaxConcurrentScans(); max > 0 {
+		if h.store.RunningCount() >= max {
+			http.Error(w, "maximum number of simultaneous scans reached; wait for a scan to finish or increase the limit in Settings", http.StatusTooManyRequests)
+			return
+		}
+	}
 	concurrency := h.cfg.GetScanConcurrency()
 	if concurrency <= 0 {
 		if s := os.Getenv("V1FS_SCAN_CONCURRENCY"); s != "" {
@@ -230,7 +256,12 @@ func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	opts := scanner.ScanOptions{ActionOnMalware: action, QuarantinePath: quarantinePath, Concurrency: concurrency}
+	opts := scanner.ScanOptions{
+		ActionOnMalware: action,
+		QuarantinePath:  quarantinePath,
+		Concurrency:     concurrency,
+		GenerateHashes:  h.cfg.GetHashEnabled(),
+	}
 	task := h.store.Create(path)
 	go h.store.RunScan(task.ID, path, apiKey, region, opts)
 

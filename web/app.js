@@ -227,6 +227,10 @@
       document.getElementById('input-quarantine-path').value = c.quarantinePath || '';
       const concurrencyEl = document.getElementById('input-scan-concurrency');
       if (concurrencyEl) concurrencyEl.value = (c.scanConcurrency > 0) ? String(c.scanConcurrency) : '';
+      const hashEl = document.getElementById('input-hash-enabled');
+      if (hashEl) hashEl.checked = !!c.hashEnabled;
+      const maxScansEl = document.getElementById('input-max-concurrent-scans');
+      if (maxScansEl) maxScansEl.value = (typeof c.maxConcurrentScans === 'number' && c.maxConcurrentScans > 0) ? String(c.maxConcurrentScans) : '';
       toggleQuarantinePath();
     });
   }
@@ -251,11 +255,25 @@
       const n = parseInt(concurrencyEl.value.trim(), 10);
       if (!isNaN(n) && n >= 1 && n <= 64) scanConcurrency = n;
     }
+    const hashEl = document.getElementById('input-hash-enabled');
+    const hashEnabled = !!(hashEl && hashEl.checked);
+    const maxScansEl = document.getElementById('input-max-concurrent-scans');
+    let maxConcurrentScans = 0;
+    if (maxScansEl && maxScansEl.value.trim() !== '') {
+      const n = parseInt(maxScansEl.value.trim(), 10);
+      if (!isNaN(n) && n >= 0 && n <= 32) maxConcurrentScans = n;
+    }
     try {
       await api('/api/config/scan-action', {
         method: 'POST',
         json: true,
-        body: JSON.stringify({ actionOnMalware: action, quarantinePath: quarantinePath, scanConcurrency: scanConcurrency })
+        body: JSON.stringify({
+          actionOnMalware: action,
+          quarantinePath: quarantinePath,
+          scanConcurrency: scanConcurrency,
+          maxConcurrentScans: maxConcurrentScans,
+          hashEnabled: hashEnabled
+        })
       });
       alert('Actions saved.');
     } catch (err) {

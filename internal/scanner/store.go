@@ -1,6 +1,8 @@
 package scanner
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -16,8 +18,8 @@ import (
 const DefaultConcurrency = 8
 
 type TaskStore struct {
-	mu        sync.RWMutex
-	tasks     map[string]*Task
+	mu         sync.RWMutex
+	tasks      map[string]*Task
 	reportsDir string
 }
 
@@ -51,6 +53,7 @@ type Malicious struct {
 	FileName    string `json:"fileName"`
 	FilePath    string `json:"filePath"`
 	MalwareName string `json:"malwareName"`
+	FileHash    string `json:"fileHash,omitempty"`
 }
 
 type scanResponse struct {
@@ -81,7 +84,8 @@ type verboseScanResponse struct {
 type ScanOptions struct {
 	ActionOnMalware string // "log", "quarantine", "delete"
 	QuarantinePath  string
-	Concurrency     int    // number of files scanned in parallel; 0 = use DefaultConcurrency
+	Concurrency     int  // number of files scanned in parallel; 0 = use DefaultConcurrency
+	GenerateHashes  bool // when true, compute SHA-256 for malicious files
 }
 
 func (s *TaskStore) Create(path string) *Task {
@@ -122,6 +126,22 @@ func (s *TaskStore) List() []*Task {
 	return list
 }
 
+// RunningCount returns the number of tasks that have not finished yet.
+func (s *TaskStore) RunningCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n := 0
+	for _, t := range s.tasks {
+		t.mu.RLock()
+		finished := t.FinishedAt != nil
+		t.mu.RUnlock()
+		if !finished {
+			n++
+		}
+	}
+	return n
+}
+
 func (t *Task) UpdateProgress(current string, scanned int, total int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -138,13 +158,14 @@ func (t *Task) IncrementScanned(path string) {
 	t.CurrentFile = path
 }
 
-func (t *Task) AddMalicious(fileName, filePath, malwareName string) {
+func (t *Task) AddMalicious(fileName, filePath, malwareName, fileHash string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.Malicious = append(t.Malicious, Malicious{
 		FileName:    fileName,
 		FilePath:    filePath,
 		MalwareName: malwareName,
+		FileHash:    fileHash,
 	})
 }
 
@@ -228,7 +249,11 @@ func (s *TaskStore) RunScan(taskID string, rootPath string, apiKey, region strin
 				}
 				fileName, filePath, malwareName := parseScanResponse(resp, path)
 				if malwareName != "" {
-					t.AddMalicious(fileName, filePath, malwareName)
+					var hash string
+					if opts.GenerateHashes {
+						hash = computeSHA256(path)
+					}
+					t.AddMalicious(fileName, filePath, malwareName, hash)
 					performAction(path, opts)
 				}
 				t.IncrementScanned(path)
@@ -372,9 +397,23 @@ func (s *TaskStore) writePDF(taskID string, t *Task) (string, error) {
 			pdf.CellFormat(0, 5, "File: "+m.FileName, "", 1, "L", false, 0, "")
 			pdf.CellFormat(0, 5, "  Path: "+m.FilePath, "", 1, "L", false, 0, "")
 			pdf.CellFormat(0, 5, "  Malware: "+m.MalwareName, "", 1, "L", false, 0, "")
+			if m.FileHash != "" {
+				pdf.CellFormat(0, 5, "  SHA-256: "+m.FileHash, "", 1, "L", false, 0, "")
+			}
 			pdf.Ln(2)
 		}
 	}
 
 	return path, pdf.OutputFileAndClose(path)
+}
+
+// computeSHA256 returns the hex-encoded SHA-256 hash of the file at path.
+// On error it returns an empty string.
+func computeSHA256(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
