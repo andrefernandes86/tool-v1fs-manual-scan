@@ -50,6 +50,16 @@ jobs:
           additionalArgs: "--saveSBOM"
           # Scans repo source; non-blocking so pipeline always continues
 
+      - name: Upload Trend Vision One (TMAS) scan report
+        if: always() && vars.TMAS_SCAN_ENABLED == 'true' && steps.tmas-scan.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tmas-scan-report
+          path: |
+            scan-report.md
+            tmas_scan_report.json
+          if-no-files-found: ignore
+
       - name: Log in to Docker Hub
         id: docker-login
         if: vars.PUBLISH_TO_DOCKERHUB == 'true'
@@ -86,15 +96,15 @@ jobs:
             case "$1" in success) echo "**Success**";; failure) echo "**Failed**";; skipped) echo "**Skipped**";; *) echo "**$1**";; esac
           }
 
-          REPO="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}"
+          # Use push step output for repo (avoids exposing secret in summary)
+          PUSH_REPO="${{ steps.push.outputs.repo }}"
           GIT_SHA="${{ github.sha }}"
-          REPORT_URL=""
-          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] && [ "$PUSH_OUTCOME" = "success" ]; then
-            REPORT_URL="https://hub.docker.com/r/$REPO/tags"
-          fi
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           {
             echo "# 📋 V1 File Security Scanner — Pipeline Report"
+            echo ""
+            echo "## Build & steps"
             echo ""
             echo "| Step | Status | Details |"
             echo "|------|--------|--------|"
@@ -102,37 +112,79 @@ jobs:
 
           echo "| **Build** | $(status_icon "$BUILD_OUTCOME") $(status_text "$BUILD_OUTCOME") | Docker image built |" >> $GITHUB_STEP_SUMMARY
           if [ "$TMAS_OUTCOME" = "skipped" ]; then
-            echo "| **Trend Vision One (TMAS)** | ⏭️ **Skipped** | Set variable \`TMAS_SCAN_ENABLED=true\` to enable |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Trend Vision One (TMAS)** | ⏭️ **Skipped** | Set \`TMAS_SCAN_ENABLED=true\` + \`TMAS_API_KEY\` to enable |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| **Trend Vision One (TMAS)** | $(status_icon "$TMAS_OUTCOME") $(status_text "$TMAS_OUTCOME") | Vulnerability + SBOM scan (non-blocking) |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Trend Vision One (TMAS)** | $(status_icon "$TMAS_OUTCOME") $(status_text "$TMAS_OUTCOME") | Vulnerability, malware, secrets + SBOM |" >> $GITHUB_STEP_SUMMARY
           fi
           if [ "$LOGIN_OUTCOME" = "skipped" ]; then
-            echo "| **Docker Hub login** | ⏭️ **Skipped** | Set variable \`PUBLISH_TO_DOCKERHUB=true\` to enable |" >> $GITHUB_STEP_SUMMARY
-            echo "| **Publish to Docker Hub** | ⏭️ **Skipped** | Add variable + Docker Hub secrets (see SECRETS.md) |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Docker Hub login** | ⏭️ **Skipped** | Set \`PUBLISH_TO_DOCKERHUB=true\` to enable |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Publish to Docker Hub** | ⏭️ **Skipped** | — |" >> $GITHUB_STEP_SUMMARY
           else
             echo "| **Docker Hub login** | $(status_icon "$LOGIN_OUTCOME") $(status_text "$LOGIN_OUTCOME") | Logged in |" >> $GITHUB_STEP_SUMMARY
-            echo "| **Publish to Docker Hub** | $(status_icon "$PUSH_OUTCOME") $(status_text "$PUSH_OUTCOME") | \`$REPO\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Publish to Docker Hub** | $(status_icon "$PUSH_OUTCOME") $(status_text "$PUSH_OUTCOME") | Image pushed |" >> $GITHUB_STEP_SUMMARY
           fi
 
           {
             echo ""
             echo "---"
-            echo "### 📦 Image"
+            echo "## 📦 Docker Hub"
             echo ""
-            echo "**Tags:** \`latest\`, \`$GIT_SHA\`"
           } >> $GITHUB_STEP_SUMMARY
 
-          if [ -n "$REPORT_URL" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Docker Hub:** [$REPO]($REPORT_URL)" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull $REPO:latest" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$PUSH_REPO" ] && [ "$PUSH_OUTCOME" = "success" ]; then
+            {
+              echo "✅ **Image published to Docker Hub**"
+              echo ""
+              echo "| Property | Value |"
+              echo "|----------|-------|"
+              echo "| **Repository** | [\`$PUSH_REPO\`](https://hub.docker.com/r/$PUSH_REPO/tags) |"
+              echo "| **Tags** | \`latest\`, \`$GIT_SHA\` |"
+              echo "| **Pull** | \`docker pull $PUSH_REPO:latest\` |"
+              echo ""
+              echo "[**Open on Docker Hub →**](https://hub.docker.com/r/$PUSH_REPO/tags)"
+              echo ""
+            } >> $GITHUB_STEP_SUMMARY
+          else
+            {
+              echo "❌ **Image was not pushed to Docker Hub**"
+              echo ""
+              echo "To publish: set repository variable \`PUBLISH_TO_DOCKERHUB\` = \`true\` and secrets \`DOCKERHUB_USERNAME\`, \`DOCKERHUB_TOKEN\` (see \`.github/SECRETS.md\`)."
+              echo ""
+            } >> $GITHUB_STEP_SUMMARY
           fi
 
           {
-            echo ""
             echo "---"
-            echo "*Pipeline is non-blocking: TMAS findings are reported in Vision One and here but do not fail the job. Configure secrets in **Settings → Secrets and variables → Actions** (see \`.github/SECRETS.md\`).*"
+            echo "## 🔒 Trend Vision One (TMAS)"
+            echo ""
+          } >> $GITHUB_STEP_SUMMARY
+
+          if [ "$TMAS_OUTCOME" = "skipped" ]; then
+            {
+              echo "⏭️ **TMAS scan was not run**"
+              echo ""
+              echo "To enable: set repository variable \`TMAS_SCAN_ENABLED\` = \`true\` and secret \`TMAS_API_KEY\` (Vision One API key with \"Run artifact scan\")."
+              echo ""
+            } >> $GITHUB_STEP_SUMMARY
+          elif [ "$TMAS_OUTCOME" = "success" ]; then
+            {
+              echo "✅ **TMAS scan completed** (vulnerabilities, malware, secrets + SBOM)"
+              echo ""
+              echo "📥 Download the **tmas-scan-report** artifact at the bottom of this run (Markdown + JSON)."
+              echo ""
+              echo "[Open this run →]($RUN_URL)"
+              echo ""
+            } >> $GITHUB_STEP_SUMMARY
+          else
+            {
+              echo "⚠️ **TMAS scan ran but reported findings or errors** (pipeline is non-blocking)"
+              echo ""
+              echo "Check the **Trend Vision One (TMAS) scan** step log above. If the action produced a report, download **\`tmas-scan-report\`** from the Artifacts section below."
+              echo ""
+            } >> $GITHUB_STEP_SUMMARY
+          fi
+
+          {
+            echo "---"
+            echo "*Configure variables and secrets in **Settings → Secrets and variables → Actions** (see \`.github/SECRETS.md\`).*"
           } >> $GITHUB_STEP_SUMMARY
