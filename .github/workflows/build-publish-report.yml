@@ -1,4 +1,4 @@
-# Multi-job workflow: build → push-to-dockerhub → (vulnerabilities-scan, secrets-scan, sbom-scan, malware-scan) → report
+# Multi-job workflow: build → push-to-dockerhub, vulnerabilities-scan, … → malware-scan (after vuln) → report
 # Produces the native GitHub Actions flowchart view. No AWS, no deploy.
 
 name: Build, Scan & Publish
@@ -243,7 +243,7 @@ jobs:
 
   malware-scan:
     name: malware-scan
-    needs: build
+    needs: [build, vulnerabilities-scan]
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -258,7 +258,7 @@ jobs:
         with:
           tmasApiKey: ${{ secrets.TMAS_API_KEY }}
           githubToken: ${{ secrets.GITHUB_TOKEN }}
-          artifact: "docker://${{ env.IMAGE_NAME }}:latest"
+          artifact: "docker:${{ env.IMAGE_NAME }}:latest"
           vulnerabilitiesScan: "false"
           malwareScan: "true"
           secretsScan: "false"
