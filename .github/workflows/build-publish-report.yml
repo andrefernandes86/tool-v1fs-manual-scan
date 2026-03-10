@@ -74,6 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: TMAS vulnerability scan
+        id: scan
         uses: trendmicro/tmas-scan-action@v3.1.1
         with:
           tmasApiKey: ${{ secrets.TMAS_API_KEY }}
@@ -83,6 +84,48 @@ jobs:
           malwareScan: "false"
           secretsScan: "false"
           additionalArgs: ""
+      - name: Analyze vulnerabilities and create summary
+        if: always()
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y jq
+          echo "## 🔍 Vulnerability Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ ! -f tmas_scan_report.json ]; then
+            echo "⚠️ No scan output (scan failed or no results file). Check the **TMAS vulnerability scan** step log." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          echo "### Overview" >> $GITHUB_STEP_SUMMARY
+          CRITICAL=$(jq -r '.vulnerabilities.criticalCount // .vulnerability.criticalCount // 0' tmas_scan_report.json 2>/dev/null || echo "0")
+          HIGH=$(jq -r '.vulnerabilities.highCount // .vulnerability.highCount // 0' tmas_scan_report.json 2>/dev/null || echo "0")
+          MEDIUM=$(jq -r '.vulnerabilities.mediumCount // .vulnerability.mediumCount // 0' tmas_scan_report.json 2>/dev/null || echo "0")
+          LOW=$(jq -r '.vulnerabilities.lowCount // .vulnerability.lowCount // 0' tmas_scan_report.json 2>/dev/null || echo "0")
+          echo "| Severity | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Critical | $CRITICAL |" >> $GITHUB_STEP_SUMMARY
+          echo "| High | $HIGH |" >> $GITHUB_STEP_SUMMARY
+          echo "| Medium | $MEDIUM |" >> $GITHUB_STEP_SUMMARY
+          echo "| Low | $LOW |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "$CRITICAL" != "null" ] && [ "$CRITICAL" -gt 0 ] 2>/dev/null; then
+            echo "### ❌ Critical Vulnerabilities" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            jq -r '
+              (.vulnerabilities.findings.Critical // .vulnerability.findings.Critical // [])[] |
+              "- " + (.id // "Unknown") + " (" + (.name // .packageName // "unknown") + ")" +
+              (if .fix and .fix != "unknown" and .fix != "not-fixed" then " - Fix: " + .fix else "" end)
+            ' tmas_scan_report.json 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "See artifact for details" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ✅ No Critical Vulnerabilities" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "$HIGH" != "null" ] && [ "$HIGH" -gt 0 ] 2>/dev/null; then
+            echo "### ⚠️ High Severity" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            jq -r '(.vulnerabilities.findings.High // .vulnerability.findings.High // [])[] | "- " + (.id // "Unknown") + " (" + (.name // .packageName // "unknown") + ")"' tmas_scan_report.json 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "See artifact" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
@@ -101,6 +144,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: TMAS secrets scan
+        id: scan
         uses: trendmicro/tmas-scan-action@v3.1.1
         with:
           tmasApiKey: ${{ secrets.TMAS_API_KEY }}
@@ -110,6 +154,32 @@ jobs:
           malwareScan: "false"
           secretsScan: "true"
           additionalArgs: ""
+      - name: Analyze secrets and create summary
+        if: always()
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y jq
+          echo "## 🔒 Secrets Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ ! -f tmas_scan_report.json ]; then
+            echo "⚠️ No scan output (scan failed or no results file). Check the **TMAS secrets scan** step log." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          echo "### Overview" >> $GITHUB_STEP_SUMMARY
+          COUNT=$(jq -r '.secrets.unmitigatedFindingsCount // .secrets.findingsCount // 0' tmas_scan_report.json 2>/dev/null || echo "0")
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Unmitigated secrets | $COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | $([ "$COUNT" = "0" ] 2>/dev/null && echo "✅ Clean" || echo "❌ Secrets found") |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "$COUNT" != "null" ] && [ "$COUNT" -gt 0 ] 2>/dev/null; then
+            echo "### ❌ Secret details" >> $GITHUB_STEP_SUMMARY
+            echo "| Rule ID | Location |" >> $GITHUB_STEP_SUMMARY
+            echo "|---------|----------|" >> $GITHUB_STEP_SUMMARY
+            jq -r '.secrets.findings.unmitigated[]? | "| \(.ruleID // .ruleId // "—") | \(.location.path // .path // "—") |"' tmas_scan_report.json 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "| — | See artifact |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ✅ No secrets found" >> $GITHUB_STEP_SUMMARY
+          fi
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
@@ -128,6 +198,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: TMAS SBOM scan
+        id: scan
         uses: trendmicro/tmas-scan-action@v3.1.1
         with:
           tmasApiKey: ${{ secrets.TMAS_API_KEY }}
@@ -137,6 +208,28 @@ jobs:
           malwareScan: "false"
           secretsScan: "false"
           additionalArgs: "--saveSBOM"
+      - name: Analyze SBOM and create summary
+        if: always()
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y jq
+          echo "## 📋 SBOM Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ ! -f tmas_scan_report.json ]; then
+            echo "⚠️ No scan output (scan failed or no results file). Check the **TMAS SBOM scan** step log." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          echo "### Overview" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          COMPONENTS=$(jq -r '.sbom.components | length // .components | length // "—"' tmas_scan_report.json 2>/dev/null || echo "—")
+          echo "| SBOM status | ✅ Generated |" >> $GITHUB_STEP_SUMMARY
+          echo "| Components (if available) | $COMPONENTS |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📥 Download the **sbom-scan-results** artifact for the full SBOM (JSON) and scan report." >> $GITHUB_STEP_SUMMARY
+          if ls SBOM_*.json 1>/dev/null 2>&1; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "SBOM file(s): \`SBOM_*.json\` (in artifact)" >> $GITHUB_STEP_SUMMARY
+          fi
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
@@ -145,6 +238,7 @@ jobs:
           path: |
             scan-report.md
             tmas_scan_report.json
+            SBOM_*.json
           if-no-files-found: ignore
 
   report:
@@ -205,7 +299,9 @@ jobs:
             echo "| Secrets | $(status_icon "$SECRETS_RESULT") |"
             echo "| SBOM | $(status_icon "$SBOM_RESULT") |"
             echo ""
-            echo "Download artifacts **vulnerability-scan-results**, **secrets-scan-results**, **sbom-scan-results** for full reports."
+            echo "Each scan job writes a **detailed report** to its own **Summary** tab (severity counts, findings tables, status). Open **vulnerabilities-scan**, **secrets-scan**, or **sbom-scan** above to view."
+            echo ""
+            echo "📥 **Artifacts:** \`vulnerability-scan-results\`, \`secrets-scan-results\`, \`sbom-scan-results\` (full JSON + Markdown)."
             echo ""
             echo "---"
           } >> $GITHUB_STEP_SUMMARY
