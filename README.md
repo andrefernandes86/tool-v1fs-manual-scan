@@ -82,7 +82,7 @@ If the container is already running, stop and remove it first: `docker stop v1fs
 ### 1. Configure API key and region
 
 1. Open **http://localhost:8080** (or your host:port).
-2. Go to the **Settings** tab.
+2. In the left navigation, choose **Settings**.
 3. Under **V1 File Security settings**:
    - Enter your **Trend Vision One API key** (with “Run file scan via SDK” permission).
    - Choose the **Region** that matches your API key (e.g. `us-east-1`).
@@ -104,15 +104,16 @@ Click **Save actions** after changing.
 
 ### 3. Run a scan task
 
-1. Open the **Scanner** tab.
+1. In the left navigation, choose **Scanner**.
 2. **Folder to scan**: Click **Root**, then open the folder you want (e.g. **mnt** → **usb** for a drive mounted at `/mnt/usb`). Click **Use this folder**, then **Start scan**.
-3. In **Scan in progress** you see: **Elapsed** time, **Files scanned** (current/total), **Malicious found**, and the **Scanning** path. When done, use **Download PDF report** and check the **Malicious files detected** banner.
+3. When you click **Start scan**, you can optionally enter a friendly **report name** (for example, a device name). This name appears at the top of the PDF and in the **History** view so you can recognise the scan later.
+4. In **Scan in progress** you see: **Elapsed** time, **Files scanned** (current/total), **Malicious found**, and the **Scanning** path. When done, use **Download PDF report** and check the **Malicious files detected** banner.
 
 ### 4. Check results
 
-- **Scanner tab** — Progress, malicious count, and list of detected files; **Download PDF report** when the scan finishes.
-- **History tab** — Past scans with path, time, counts, and a **Download PDF** link per report.
-- **Settings → Test options** — **Run test scan** to scan built-in samples (`/data/test-samples`: EICAR + clean file) and verify detection.
+- **Scanner** — Progress, malicious count, and list of detected files; **Download PDF report** when the scan finishes.
+- **History** — Past scans with **report name**, path, time, counts, and a **Download PDF** link per report.
+- **Settings → Test options** — Use **Submit EICAR test file** or **Submit clean test file** to copy a built‑in sample (`/data/test-samples`: EICAR + clean file) into a destination folder you choose and immediately run a scan there.
 
 ---
 

@@ -210,34 +210,19 @@ body {
 }
 
 .scanner-hero-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
   margin-bottom: 1rem;
 }
 
-.scanner-hero-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  background: radial-gradient(circle at 30% 20%, #7dd3ff, #1f2937);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-
-.scanner-hero-badge {
-  width: 16px;
-  height: 16px;
-  border-radius: 6px;
-  border: 2px solid rgba(15, 23, 42, 0.8);
-  background: rgba(191, 219, 254, 0.9);
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.3);
-}
-
 .scanner-hero-copy h2 {
-  margin-bottom: 0.25rem;
+  margin: 0 0 0.25rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.scanner-hero-subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
 }
 
 .scanner-hero-body {

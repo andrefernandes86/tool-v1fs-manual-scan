@@ -12,16 +12,18 @@
   let scanStartedAt = null;
 
   function showPane(name) {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
-    const tab = document.querySelector('.tab[data-tab="' + name + '"]');
+    const tab = document.querySelector('.side-nav-item[data-tab="' + name + '"]');
     const pane = document.getElementById('pane-' + name);
-    if (tab) tab.classList.add('active');
+    document.querySelectorAll('.side-nav-item').forEach(btn => btn.classList.remove('side-nav-item-active'));
+    if (tab) tab.classList.add('side-nav-item-active');
     if (pane) pane.classList.add('active');
   }
 
-  document.querySelectorAll('.tab').forEach(btn => {
-    btn.addEventListener('click', () => showPane(btn.dataset.tab));
+  document.querySelectorAll('.side-nav-item').forEach(btn => {
+    const tabName = btn.dataset.tab;
+    if (!tabName) return;
+    btn.addEventListener('click', () => showPane(tabName));
   });
 
   async function api(path, options = {}) {
@@ -333,7 +335,8 @@
     });
   }
 
-  document.querySelector('.tab[data-tab="history"]').addEventListener('click', loadHistory);
+  const historyNav = document.querySelector('.side-nav-item[data-tab="history"]');
+  if (historyNav) historyNav.addEventListener('click', loadHistory);
 
   function loadTestSamplesPath() {
     api('/api/test-samples').then(data => {
@@ -342,7 +345,8 @@
     }).catch(() => {});
   }
 
-  document.querySelector('.tab[data-tab="settings"]').addEventListener('click', loadTestSamplesPath);
+  const settingsNav = document.querySelector('.side-nav-item[data-tab="settings"]');
+  if (settingsNav) settingsNav.addEventListener('click', loadTestSamplesPath);
   async function runTestSample(sample) {
     const destDir = document.getElementById('input-test-dest').value.trim();
     if (!destDir) {

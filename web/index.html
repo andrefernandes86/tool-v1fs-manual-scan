@@ -13,12 +13,11 @@
         <span class="side-nav-dot"></span>
         <span class="side-nav-title">TrendAI Vision One</span>
       </div>
-      <div class="side-nav-section-label">Cloud Security</div>
+      <div class="side-nav-section-label">File Security</div>
       <nav class="side-nav-section">
-        <button type="button" class="side-nav-item">Cloud Risk Management</button>
-        <button type="button" class="side-nav-item">Container Security</button>
-        <button type="button" class="side-nav-item side-nav-item-active">File Security</button>
-        <button type="button" class="side-nav-item">Server &amp; Workload</button>
+        <button type="button" class="side-nav-item side-nav-item-active" data-tab="scanner">Scanner</button>
+        <button type="button" class="side-nav-item" data-tab="settings">Settings</button>
+        <button type="button" class="side-nav-item" data-tab="history">History</button>
       </nav>
     </aside>
 
@@ -34,22 +33,13 @@
         </div>
       </header>
 
-      <nav class="tabs">
-      <button type="button" class="tab active" data-tab="scanner">Scanner</button>
-      <button type="button" class="tab" data-tab="settings">Settings</button>
-      <button type="button" class="tab" data-tab="history">History</button>
-    </nav>
-
     <main class="panes">
       <section id="pane-scanner" class="pane active">
         <div class="card scanner-hero">
           <div class="scanner-hero-header">
-            <div class="scanner-hero-icon" aria-hidden="true">
-              <span class="scanner-hero-badge"></span>
-            </div>
             <div class="scanner-hero-copy">
-              <h2>Choose what to scan</h2>
-              <p class="hint">Pick a location on this system. The scan will include all files in the folder and its subfolders.</p>
+              <h2>Scan a folder</h2>
+              <p class="scanner-hero-subtitle">Select where you want to run a one‑time malware scan.</p>
             </div>
           </div>
           <div class="scanner-hero-body">
