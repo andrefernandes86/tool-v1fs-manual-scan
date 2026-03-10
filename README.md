@@ -19,7 +19,7 @@ docker build -t v1fs-scanner .
 
 # Run (replace with your API key and region, or set them in the UI after first start)
 docker run -d -p 8080:8080 \
-  -v /mnt/data:/mnt/data \
+  -v /mnt/data:/mnt/data \ # Update the /mnt/data with the path you would like to scan
   --name v1fs-scanner \
   v1fs-scanner
 ```
