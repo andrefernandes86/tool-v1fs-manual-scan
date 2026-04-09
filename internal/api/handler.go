@@ -129,7 +129,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"runningInContainer": runningInContainer(),
 	}
 	if runningInContainer() {
-		out["containerScanRootHint"] = "Scans are recursive. In Docker, / is only this container (often a few hundred files), not your host. To scan the host, run with e.g. -v /:/host:ro and add /host under Scan targets."
+		out["containerScanRootHint"] = "Recursive scans include all subfolders.\n\nIn Docker, “/” is only this container (small). Your Mac, PC, USB drives, and home folder are not visible until you mount them with docker run -v.\n\n1) Add a volume: host path first, container path second. Then 2) add the container path under Scan targets.\n\nExamples (pick one that matches your case):\n• macOS home → container:  -v /Users/andre:/mnt/data  then scan  /mnt/data\n• Linux full host (read-only):  -v /:/host:ro  then scan  /host\n• USB / external disk (same path both sides):  -v /mnt/usb:/mnt/usb  then scan  /mnt/usb\n• Custom names:  -v /mnt/usb-drive:/mnt/external-drive  then scan  /mnt/external-drive"
 	}
 	json.NewEncoder(w).Encode(out)
 }
@@ -483,7 +483,7 @@ func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 	if runningInContainer() {
 		for _, p := range scanRoots {
 			if p == string(filepath.Separator) {
-				out["scanHint"] = "Recursive scan of every file under /. In Docker this is only the container image (often ~300–800 files), not your Mac/PC host. Mount the host (e.g. docker run … -v /:/host:ro …) and scan /host to include the full host tree."
+				out["scanHint"] = "“/” here is only this container (~hundreds of files). To scan your real disks, restart with -v and target that path—for example -v /Users/andre:/mnt/data and scan /mnt/data, or -v /:/host:ro and scan /host (Linux)."
 				break
 			}
 		}

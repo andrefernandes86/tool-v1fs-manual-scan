@@ -47,7 +47,7 @@
         'You are including the filesystem root (/). Scans are recursive (all subfolders). On Linux, only top-level /proc, /sys, /dev, and /run are skipped. Continue?';
       if (runningInContainer) {
         msg =
-          'You selected /. Inside Docker, / is only this container image (often a few hundred files), not your Mac or PC host. The scan is still recursive. To scan the host, recreate the container with e.g. -v /:/host:ro and add /host as a target. Continue with / anyway?';
+          'You selected /. In Docker that is only this container (small)—not your Mac/PC files or USB drives unless you mounted them.\n\nTo scan your stuff: stop the container, run docker again with -v (host path:container path), then add the container path under Scan targets—e.g. -v /Users/andre:/mnt/data and scan /mnt/data, or on Linux -v /:/host:ro and scan /host.\n\nContinue with / anyway?';
       }
       return window.confirm(msg);
     }

@@ -7,7 +7,7 @@ Docker-based web app that scans directories for malware using the [Trend Vision 
 - **Settings**: Configure and persist scanner provider (TrendAI SaaS or on-prem **gRPC-only** local gateway), credentials/endpoint, optional TLS for gRPC, actions on detection (log only, move to quarantine, or delete), maximum simultaneous scans, predictive machine learning (SaaS only), optional file hash generation, report mode (summary vs all files), and **Test scanner connection** / **Compatibility check**.
 - **Folder browser**: Platform-aware top level (**Locations**) — on Linux a single root (`/`); on macOS **System** (`/`) plus volumes under `/Volumes`; on Windows, available drive letters (`C:\`, `D:\`, …). Navigate with folder rows, **↑ Parent**, and **Locations**. Paths must be absolute (as shown in the UI).
 - **Scan targets**: Build a list of one or more folders to scan in a single job (up to **32** paths). **Add current folder** appends the directory you are viewing; **Use only this folder** replaces the list with that path; **Clear all** empties the list. Scanning filesystem root (`/`) or a drive root asks for confirmation. **Cancel** on the report-name dialog does **not** start a scan.
-- **Scan**: Live progress with **Target(s)** (the paths being scanned), elapsed time, files scanned, malicious count, and current file; banner listing detected malware; PDF report at the end. Each target directory is scanned **recursively** (every regular file under it). On Linux, only the **root** virtual trees **`/proc`**, **`/sys`**, **`/dev`**, and **`/run`** are skipped (not arbitrary folders elsewhere named `dev`, `sys`, or `run`). Permission errors on skipped system trees are treated as expected and do not inflate the scan error count. **Docker:** **`/`** inside the container is only the image filesystem (often a few hundred files), not your host; mount the host (e.g. `-v /:/host:ro`) and scan **`/host`** for a full host tree.
+- **Scan**: Live progress with **Target(s)** (the paths being scanned), elapsed time, files scanned, malicious count, and current file; banner listing detected malware; PDF report at the end. Each target directory is scanned **recursively** (every regular file under it). On Linux, only the **root** virtual trees **`/proc`**, **`/sys`**, **`/dev`**, and **`/run`** are skipped (not arbitrary folders elsewhere named `dev`, `sys`, or `run`). Permission errors on skipped system trees are treated as expected and do not inflate the scan error count. **Docker:** **`/`** inside the container is only the image (often a few hundred files). The UI shows a **Running in a container** notice with examples: mount the host (`-v /:/host:ro` → scan **`/host`** on Linux), your **macOS home** (`-v /Users/you:/mnt/data` → scan **`/mnt/data`**), or a USB/drive (`-v /mnt/usb:/mnt/usb` → scan **`/mnt/usb`**). See **FAQ** and **Quick start** below.
 - **History**: List of past scans with statistics and download links for reports (multi-folder jobs show all paths separated by `; `).
 
 ---
@@ -26,7 +26,13 @@ docker run -d -p 8080:8080 \
   v1fs-scanner:latest
 ```
 
-Add extra `-v` mounts for any host folders you want to browse and scan (use the **same path** in the container as on the host, e.g. `-v /mnt/usb:/mnt/usb`).
+Add **extra `-v` mounts** for anything you want to scan: **host path first**, **container path second**, then add the **container** path under Scan targets.
+
+Examples:
+
+- **macOS (Docker Desktop):** `-v /Users/yourname:/mnt/data` then scan **`/mnt/data`** (replace `yourname`).
+- **Linux USB:** `-v /mnt/usb:/mnt/usb` then scan **`/mnt/usb`**.
+- **Linux full host (read-only):** `-v /:/host:ro` then scan **`/host`**.
 
 Open **http://localhost:8080** in your browser. If you did not pass an API key via environment variables, go to **Settings** and enter your Trend Vision One API key and region, then click **Save scanner settings**.
 
@@ -36,7 +42,7 @@ After you change application code or pull updates, rebuild the image and **recre
 
 ## Scanning an external disk (USB or hard drive)
 
-Mount the drive on the host, then pass it into the container. Use the **same path** on both sides (e.g. `/mnt/usb` on host and in container) so the UI shows a path you recognise.
+Mount the drive on the host, then pass it into the container with **`-v`**. Using the **same path** on host and container (e.g. `-v /mnt/usb:/mnt/usb`) keeps the UI aligned with what you see on the host. If you prefer different names, map them explicitly, e.g. **`-v /mnt/usb-drive:/mnt/external-drive`** and then scan **`/mnt/external-drive`** in the app.
 
 ### 1. Mount the drive on the host
 
@@ -139,7 +145,7 @@ Click **Save actions** after changing.
    - **Use only this folder** — Clears the list and sets a single target to the folder you are viewing.
    - **Clear all** — Removes every target. **Start scan** stays disabled until at least one folder is listed.
    - Including **`/`** (Linux root) or a **Windows drive root** (`C:\`, etc.) triggers a confirmation dialog because the scope is very large.
-   - **Docker:** **`/`** is the container root only (often far fewer files than the host). To scan the host filesystem, bind-mount it (e.g. `-v /:/host:ro`) and add **`/host`** (or your chosen mount point) as the scan target.
+   - **Docker:** **`/`** is the container root only (often far fewer files than the host). Recreate `docker run` with **`-v host:container`**, then add the **container** path here: **macOS home** — `-v /Users/you:/mnt/data` → **`/mnt/data`**; **Linux host** — `-v /:/host:ro` → **`/host`**; **USB** — `-v /mnt/usb:/mnt/usb` → **`/mnt/usb`** (or map to another name, e.g. `/mnt/external-drive`). The Scanner tab also shows a **Running in a container** help banner when applicable.
 4. Click **Start scan**. A dialog asks for an optional **report name** (for the PDF and **History**). **OK** starts the job; **Cancel** closes the dialog and **does not** start a scan.
 5. Under **Scan in progress**, **Target(s)** shows the path or paths being scanned (semicolon-separated if you chose several). You also see **Elapsed**, **Files scanned**, **Malicious found**, **Scan errors**, and the file currently being scanned. When finished, use **Download PDF report** and review the **Malicious files detected** banner if anything was found.
 
@@ -187,14 +193,15 @@ docker pull <your-registry>/v1fs-scanner:latest
 docker stop v1fs-scanner
 docker rm v1fs-scanner
 
-# Run the new image (same volume and drive mount)
+# Run the new image (same volumes as before)
 docker run -d -p 8080:8080 \
+  -v v1fs-data:/data \
   -v /mnt/usb:/mnt/usb \
   --name v1fs-scanner \
   <your-registry>/v1fs-scanner:latest
 ```
 
-Your config and reports in the `v1fs-data` volume are preserved.
+Adjust the second `-v` to match how you mount host folders (e.g. `-v /Users/you:/mnt/data` on macOS). Your config and reports stay in the **`v1fs-data`** volume mapped to **`/data`**.
 
 ### Option B: Rebuild from source (this repository)
 
@@ -259,7 +266,9 @@ Static files are served from the `web/` directory (or current directory if `web/
 
 ## FAQ: “I scanned `/` but only ~300 files”
 
-The scan **is** recursive. That file count usually means the app is running **inside Docker**: `/` is the **container’s** root (Alpine + app), not your laptop or server’s disk. Mount the host and scan that mount, for example:
+The scan **is** recursive. That file count usually means the app is running **inside Docker**: `/` is the **container’s** root (Alpine + app), not your laptop or server’s disk, and not an external drive unless you mounted it.
+
+**Scan the whole host** — bind-mount the host and scan that path:
 
 ```bash
 docker run -d -p 8080:8080 \
@@ -269,7 +278,33 @@ docker run -d -p 8080:8080 \
   v1fs-scanner:latest
 ```
 
-Then in the UI open **`/host`** (under **Locations** → **Root** → **host**) and add it as a scan target. The UI also shows a **Running in a container** notice when it detects Docker.
+Then in the UI open **`/host`** (e.g. **Locations** → **Root** → **host**) and add it as a scan target.
+
+**Scan your Mac home folder from Docker Desktop** — mount it under a path you will select in the app (config still uses the **`/data`** volume):
+
+```bash
+docker run -d -p 8080:8080 \
+  -v v1fs-data:/data \
+  -v /Users/andre:/mnt/data:ro \
+  --name v1fs-scanner \
+  v1fs-scanner:latest
+```
+
+Replace **`/Users/andre`** with your username. In the UI, browse to **`/mnt/data`** and add it under **Scan targets**.
+
+**Scan an external USB or hard drive** — mount the drive on the host first, then pass it into the container with **`-v`**. Same path on both sides is often easiest:
+
+```bash
+docker run -d -p 8080:8080 \
+  -v v1fs-data:/data \
+  -v /mnt/usb:/mnt/usb:ro \
+  --name v1fs-scanner \
+  v1fs-scanner:latest
+```
+
+Or map to another in-container name, e.g. **`-v /mnt/usb-drive:/mnt/external-drive:ro`**, then scan **`/mnt/external-drive`**. Use **`:ro`** if you only want scanning and reporting (no quarantine/delete on that volume).
+
+The UI also shows a **Running in a container** notice when it detects Docker.
 
 ---
 
