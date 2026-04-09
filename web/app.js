@@ -1,11 +1,8 @@
 (function () {
-  const REGIONS = [
-    'us-east-1', 'eu-central-1', 'eu-west-2', 'ca-central-1',
-    'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1', 'ap-south-1', 'me-central-1'
-  ];
+  const MAX_SCAN_FOLDERS = 32;
 
   let currentPath = '';
-  let selectedPath = '';
+  let selectedPaths = [];
   let currentTaskId = null;
   let pollTimer = null;
   let elapsedTimer = null;
@@ -42,66 +39,264 @@
     return document.getElementById('dir-list');
   }
 
-  function loadDirs(path) {
-    currentPath = path || '';
-    const q = path ? '?path=' + encodeURIComponent(path) : '';
-    dirListEl().innerHTML = '';
-    dirListEl().appendChild(document.createTextNode('Loading…'));
-    api('/api/dirs' + q).then(entries => {
-      dirListEl().innerHTML = '';
-      const displayPath = currentPath || '/';
-      document.getElementById('breadcrumb-tail').textContent = displayPath ? ' / ' + displayPath : '';
-      entries.forEach(entry => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'dir-item';
-        btn.textContent = entry.name + (entry.name === '/' ? '' : '/');
-        btn.dataset.path = entry.path;
-        btn.addEventListener('click', () => loadDirs(entry.path));
-        dirListEl().appendChild(btn);
+  function confirmScanRootIfNeeded(p) {
+    const norm = String(p).replace(/\\/g, '/');
+    if (norm === '/' || norm === '//') {
+      return window.confirm(
+        'You are including the filesystem root (/). This scans the whole tree visible to the app (on Linux, /proc, /sys, and /dev are skipped). Continue?'
+      );
+    }
+    if (/^[a-zA-Z]:\/?$/.test(norm)) {
+      return window.confirm('You selected a drive root. This may scan the entire volume. Continue?');
+    }
+    return true;
+  }
+
+  function renderScanTargets() {
+    const el = document.getElementById('scan-targets');
+    if (!el) return;
+    el.innerHTML = '';
+    if (selectedPaths.length === 0) {
+      const ph = document.createElement('span');
+      ph.className = 'scan-targets-placeholder';
+      ph.textContent = 'No folders selected. Tick checkboxes beside folders or use the buttons below.';
+      el.appendChild(ph);
+      return;
+    }
+    selectedPaths.forEach(function (p) {
+      const chip = document.createElement('span');
+      chip.className = 'scan-target-chip';
+      const pathSpan = document.createElement('span');
+      pathSpan.className = 'scan-target-chip-path';
+      pathSpan.textContent = p;
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'scan-target-chip-remove';
+      rm.setAttribute('aria-label', 'Remove folder');
+      rm.textContent = '\u00d7';
+      rm.addEventListener('click', function () {
+        selectedPaths = selectedPaths.filter(function (x) {
+          return x !== p;
+        });
+        renderScanTargets();
+        updateSelectButton();
       });
-      updateSelectButton();
-    }).catch(err => {
-      dirListEl().innerHTML = 'Error: ' + err.message;
+      chip.appendChild(pathSpan);
+      chip.appendChild(rm);
+      el.appendChild(chip);
     });
+    syncDirectoryListCheckboxes();
   }
 
   function updateSelectButton() {
-    document.getElementById('selected-path').textContent = selectedPath || '—';
-    document.getElementById('btn-start-scan').disabled = !selectedPath;
+    document.getElementById('btn-start-scan').disabled = selectedPaths.length === 0;
   }
 
-  document.getElementById('btn-select-folder').addEventListener('click', () => {
-    selectedPath = currentPath || '/';
+  function syncDirectoryListCheckboxes() {
+    const root = dirListEl();
+    if (!root) return;
+    root.querySelectorAll('input.dir-scan-checkbox').forEach(function (input) {
+      const p = input.getAttribute('data-path');
+      if (p) input.checked = selectedPaths.indexOf(p) >= 0;
+    });
+  }
+
+  /** Returns true if the checkbox state should stay as requested. */
+  function togglePathFromCheckbox(absPath, wantOn) {
+    if (wantOn) {
+      if (!confirmScanRootIfNeeded(absPath)) {
+        return false;
+      }
+      if (selectedPaths.indexOf(absPath) >= 0) {
+        return true;
+      }
+      if (selectedPaths.length >= MAX_SCAN_FOLDERS) {
+        alert('Maximum ' + MAX_SCAN_FOLDERS + ' folders per scan.');
+        return false;
+      }
+      selectedPaths.push(absPath);
+    } else {
+      selectedPaths = selectedPaths.filter(function (x) {
+        return x !== absPath;
+      });
+    }
+    renderScanTargets();
+    updateSelectButton();
+    return true;
+  }
+
+  function showScanTargetSummary(text) {
+    const wrap = document.getElementById('scan-target-summary');
+    const val = document.getElementById('scan-target-summary-value');
+    if (!wrap || !val) return;
+    val.textContent = text || '';
+    wrap.classList.toggle('hidden', !text);
+  }
+
+  function prepareProgressUI() {
+    scanStartedAt = null;
+    document.getElementById('scan-elapsed').textContent = '0:00';
+    document.getElementById('malicious-count').textContent = '0';
+    document.getElementById('scan-error-count').textContent = '0';
+    const lastErr = document.getElementById('scan-last-error');
+    if (lastErr) {
+      lastErr.textContent = '';
+      lastErr.classList.add('hidden');
+    }
+    document.getElementById('scan-progress').classList.remove('hidden');
+    document.getElementById('malicious-banner').classList.add('hidden');
+    const progressEl = document.getElementById('scan-progress');
+    progressEl.querySelectorAll('a[download], p.error-cell').forEach(function (n) {
+      n.remove();
+    });
+  }
+
+  function startScanSession(taskId, targetLabel) {
+    currentTaskId = taskId;
+    prepareProgressUI();
+    showScanTargetSummary(targetLabel || '');
+    startPolling();
+  }
+
+  function loadDirs(path) {
+    currentPath = path != null ? path : '';
+    const q = currentPath !== '' ? '?path=' + encodeURIComponent(currentPath) : '';
+    const upBtn = document.getElementById('btn-dir-up');
+    dirListEl().innerHTML = '';
+    dirListEl().appendChild(document.createTextNode('Loading…'));
+    api('/api/dirs' + q).then(data => {
+      const entries = data.entries || [];
+      const serverPath = data.currentPath != null ? data.currentPath : currentPath;
+      currentPath = serverPath;
+      dirListEl().innerHTML = '';
+      const tail = document.getElementById('breadcrumb-tail');
+      if (currentPath === '') {
+        tail.textContent = '';
+        tail.classList.add('breadcrumb-path-muted');
+      } else {
+        tail.textContent = ' → ' + currentPath;
+        tail.classList.remove('breadcrumb-path-muted');
+      }
+      if (upBtn) {
+        upBtn.disabled = !data.canGoUp;
+        upBtn.onclick = () => {
+          if (data.canGoUp) {
+            loadDirs(data.upPath != null ? data.upPath : '');
+          }
+        };
+      }
+      if (entries.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'dir-list-empty';
+        empty.textContent = currentPath === '' ? 'No locations found.' : 'No subfolders here.';
+        dirListEl().appendChild(empty);
+      } else {
+        entries.forEach(function (entry) {
+          const row = document.createElement('div');
+          row.className = 'dir-item-row';
+
+          const checkLabel = document.createElement('label');
+          checkLabel.className = 'dir-item-check';
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.className = 'dir-scan-checkbox';
+          cb.setAttribute('data-path', entry.path);
+          cb.checked = selectedPaths.indexOf(entry.path) >= 0;
+          cb.setAttribute('aria-label', 'Include ' + entry.path + ' in scan');
+          cb.addEventListener('click', function (e) {
+            e.stopPropagation();
+          });
+          cb.addEventListener('change', function () {
+            if (!togglePathFromCheckbox(entry.path, cb.checked)) {
+              cb.checked = false;
+            }
+          });
+          checkLabel.appendChild(cb);
+          row.appendChild(checkLabel);
+
+          const nav = document.createElement('button');
+          nav.type = 'button';
+          nav.className = 'dir-item dir-item-nav';
+          const label = entry.name === '/' ? 'Root' : entry.name;
+          nav.innerHTML =
+            '<span class="dir-item-icon" aria-hidden="true"></span><span class="dir-item-label">' +
+            escapeHtml(label) +
+            '</span>';
+          nav.setAttribute('aria-label', 'Open folder ' + entry.path);
+          nav.addEventListener('click', function () {
+            loadDirs(entry.path);
+          });
+          row.appendChild(nav);
+
+          dirListEl().appendChild(row);
+        });
+      }
+    }).catch(err => {
+      dirListEl().innerHTML = '';
+      const p = document.createElement('p');
+      p.className = 'dir-list-error';
+      p.textContent = 'Error: ' + err.message;
+      dirListEl().appendChild(p);
+      if (upBtn) upBtn.disabled = true;
+    });
+  }
+
+  document.getElementById('btn-add-scan-target').addEventListener('click', function () {
+    if (currentPath === '') {
+      alert('Open a folder first: choose a location, then open the directory you want to add.');
+      return;
+    }
+    if (!confirmScanRootIfNeeded(currentPath)) return;
+    if (selectedPaths.indexOf(currentPath) >= 0) return;
+    if (selectedPaths.length >= MAX_SCAN_FOLDERS) {
+      alert('Maximum ' + MAX_SCAN_FOLDERS + ' folders per scan.');
+      return;
+    }
+    selectedPaths.push(currentPath);
+    renderScanTargets();
     updateSelectButton();
   });
 
-  document.querySelector('.breadcrumb-btn').addEventListener('click', () => {
-    selectedPath = '';
-    loadDirs('');
+  document.getElementById('btn-use-only-folder').addEventListener('click', function () {
+    if (currentPath === '') {
+      alert('Open a folder first: choose a location, then open the directory you want to scan.');
+      return;
+    }
+    if (!confirmScanRootIfNeeded(currentPath)) return;
+    selectedPaths = [currentPath];
+    renderScanTargets();
     updateSelectButton();
+  });
+
+  document.getElementById('btn-clear-scan-targets').addEventListener('click', function () {
+    selectedPaths = [];
+    renderScanTargets();
+    updateSelectButton();
+  });
+
+  document.querySelector('.breadcrumb-btn').addEventListener('click', function () {
+    loadDirs('');
   });
 
   loadDirs('');
 
-  document.getElementById('btn-start-scan').addEventListener('click', async () => {
-    if (!selectedPath) return;
+  document.getElementById('btn-start-scan').addEventListener('click', async function () {
+    if (selectedPaths.length === 0) return;
+    const defaultName =
+      selectedPaths.length === 1 ? selectedPaths[0] : selectedPaths.length + ' folders';
+    const reportNameInput = window.prompt(
+      'Optional report name to help identify this scan later:',
+      defaultName
+    );
+    if (reportNameInput === null) return;
+    const reportName = reportNameInput.trim();
     try {
-      const defaultName = selectedPath || '';
-      const reportNameInput = window.prompt('Optional report name to help identify this scan later:', defaultName);
-      const reportName = reportNameInput ? reportNameInput.trim() : '';
       const { taskId } = await api('/api/scan/start', {
         method: 'POST',
         json: true,
-        body: JSON.stringify({ path: selectedPath, reportName })
+        body: JSON.stringify({ paths: selectedPaths, reportName: reportName })
       });
-      currentTaskId = taskId;
-      scanStartedAt = null;
-      document.getElementById('scan-elapsed').textContent = '0:00';
-      document.getElementById('malicious-count').textContent = '0';
-      document.getElementById('scan-progress').classList.remove('hidden');
-      document.getElementById('malicious-banner').classList.add('hidden');
-      startPolling();
+      startScanSession(taskId, selectedPaths.join('; '));
     } catch (e) {
       alert('Failed to start scan: ' + e.message);
     }
@@ -154,8 +349,22 @@
       document.getElementById('scanned-count').textContent = data.scannedCount;
       document.getElementById('total-files').textContent = data.totalFiles;
       document.getElementById('malicious-count').textContent = (data.malicious && data.malicious.length) ? data.malicious.length : 0;
+      document.getElementById('scan-error-count').textContent = data.scanErrors || 0;
+      const lastErr = document.getElementById('scan-last-error');
+      if (lastErr) {
+        if (data.lastScanError) {
+          lastErr.textContent = 'Latest scan error: ' + data.lastScanError;
+          lastErr.classList.remove('hidden');
+        } else {
+          lastErr.textContent = '';
+          lastErr.classList.add('hidden');
+        }
+      }
       const pct = data.totalFiles ? (100 * data.scannedCount / data.totalFiles) : 0;
       document.getElementById('progress-fill').style.width = pct + '%';
+      if (data.path) {
+        showScanTargetSummary(data.path);
+      }
       const detailsEl = document.getElementById('scan-details');
       if (detailsEl && scanStartedAt) {
         const finishedAtMs = data.finishedAt ? new Date(data.finishedAt).getTime() : null;
@@ -229,6 +438,9 @@
     const region = document.getElementById('input-region').value.trim();
     const localScannerUrl = (document.getElementById('input-local-scanner-url') || {}).value ? document.getElementById('input-local-scanner-url').value.trim() : '';
     const localScannerApiKey = (document.getElementById('input-local-scanner-apikey') || {}).value ? document.getElementById('input-local-scanner-apikey').value.trim() : '';
+    const localScannerProtocol = 'grpc';
+    const tlsEl = document.getElementById('input-local-scanner-tls');
+    const localScannerTls = !!(tlsEl && tlsEl.checked);
     if (scannerType === 'saas') {
       if (!apiKey || !region) {
         alert('API key and region are required for SaaS scanner.');
@@ -242,7 +454,7 @@
       await api('/api/config', {
         method: 'POST',
         json: true,
-        body: JSON.stringify({ apiKey, region, scannerType, localScannerUrl, localScannerApiKey })
+        body: JSON.stringify({ apiKey, region, scannerType, localScannerUrl, localScannerApiKey, localScannerProtocol, localScannerTls })
       });
       document.getElementById('input-apikey').value = '';
       loadConfig();
@@ -262,6 +474,8 @@
       if (modeRadio) modeRadio.checked = true;
       const localUrlEl = document.getElementById('input-local-scanner-url');
       if (localUrlEl) localUrlEl.value = c.localScannerUrl || '';
+      const tlsEl = document.getElementById('input-local-scanner-tls');
+      if (tlsEl) tlsEl.checked = !!c.localScannerTls;
       toggleScannerFields();
       const action = (c.actionOnMalware === 'quarantine' || c.actionOnMalware === 'delete') ? c.actionOnMalware : 'log';
       const radio = document.querySelector('input[name="actionOnMalware"][value="' + action + '"]');
@@ -273,6 +487,8 @@
       if (pmlEl) pmlEl.checked = !!c.predictiveML;
       const maxScansEl = document.getElementById('input-max-concurrent-scans');
       if (maxScansEl) maxScansEl.value = (typeof c.maxConcurrentScans === 'number' && c.maxConcurrentScans > 0) ? String(c.maxConcurrentScans) : '';
+      const reportModeEl = document.getElementById('input-report-mode');
+      if (reportModeEl) reportModeEl.value = c.reportMode === 'all' ? 'all' : 'stats';
       toggleQuarantinePath();
     });
   }
@@ -283,12 +499,20 @@
     if (wrap && q) wrap.classList.toggle('hidden', !q.checked);
   }
 
+  function updateLocalScannerHints() {
+    const mode = (document.querySelector('input[name="scannerType"]:checked') || {}).value || 'saas';
+    if (mode !== 'local') return;
+    const endpointInput = document.getElementById('input-local-scanner-url');
+    if (endpointInput) endpointInput.placeholder = 'host:port (e.g. 192.168.200.71:50051)';
+  }
+
   function toggleScannerFields() {
     const mode = (document.querySelector('input[name="scannerType"]:checked') || {}).value || 'saas';
     const saasWrap = document.getElementById('scanner-saas-wrap');
     const localWrap = document.getElementById('scanner-local-wrap');
     if (saasWrap) saasWrap.classList.toggle('hidden', mode !== 'saas');
     if (localWrap) localWrap.classList.toggle('hidden', mode !== 'local');
+    updateLocalScannerHints();
   }
 
   document.querySelectorAll('input[name="actionOnMalware"]').forEach(function (el) {
@@ -297,7 +521,6 @@
   document.querySelectorAll('input[name="scannerType"]').forEach(function (el) {
     el.addEventListener('change', toggleScannerFields);
   });
-
   const btnTestScanner = document.getElementById('btn-test-scanner');
   if (btnTestScanner) {
     btnTestScanner.addEventListener('click', async () => {
@@ -306,6 +529,17 @@
         alert(res.message || 'Scanner responded successfully.');
       } catch (err) {
         alert('Scanner test failed: ' + err.message);
+      }
+    });
+  }
+  const btnCompatScanner = document.getElementById('btn-compat-scanner');
+  if (btnCompatScanner) {
+    btnCompatScanner.addEventListener('click', async () => {
+      try {
+        const res = await api('/api/scanner/compat', { method: 'POST', json: true, body: JSON.stringify({}) });
+        alert(res.message || 'Scanner compatibility check succeeded.');
+      } catch (err) {
+        alert('Compatibility check failed: ' + err.message);
       }
     });
   }
@@ -318,6 +552,8 @@
     const hashEnabled = !!(hashEl && hashEl.checked);
     const pmlEl = document.getElementById('input-predictive-ml');
     const predictiveML = !!(pmlEl && pmlEl.checked);
+    const reportModeEl = document.getElementById('input-report-mode');
+    const reportMode = (reportModeEl && reportModeEl.value === 'all') ? 'all' : 'stats';
     const maxScansEl = document.getElementById('input-max-concurrent-scans');
     let maxConcurrentScans = 0;
     if (maxScansEl && maxScansEl.value.trim() !== '') {
@@ -333,7 +569,8 @@
           quarantinePath: quarantinePath,
           maxConcurrentScans: maxConcurrentScans,
           hashEnabled: hashEnabled,
-          predictiveML: predictiveML
+          predictiveML: predictiveML,
+          reportMode: reportMode
         })
       });
       alert('Actions saved.');
@@ -343,6 +580,8 @@
   });
 
   loadConfig();
+  renderScanTargets();
+  updateSelectButton();
 
   function loadHistory() {
     api('/api/scan/history').then(list => {
@@ -392,25 +631,18 @@
     }
     const defaultName = (sample === 'eicar' ? 'EICAR test' : 'Clean test') + ' - ' + destDir;
     const reportNameInput = window.prompt('Optional report name for this test scan:', defaultName);
-    const reportName = reportNameInput ? reportNameInput.trim() : '';
+    if (reportNameInput === null) return;
+    const reportName = reportNameInput.trim();
     try {
-      const { taskId } = await api('/api/test-scan', {
+      const { taskId, scanPath } = await api('/api/test-scan', {
         method: 'POST',
         json: true,
-        body: JSON.stringify({ sample, destDir, reportName })
+        body: JSON.stringify({ sample, destDir, reportName: reportName })
       });
-      currentTaskId = taskId;
-      scanStartedAt = null;
-      document.getElementById('scan-elapsed').textContent = '0:00';
-      document.getElementById('malicious-count').textContent = '0';
       showPane('scanner');
-      const progressEl = document.getElementById('scan-progress');
-      progressEl.classList.remove('hidden');
-      progressEl.querySelectorAll('a[download], p.error-cell').forEach(n => n.remove());
-      document.getElementById('malicious-banner').classList.add('hidden');
-      startPolling();
+      startScanSession(taskId, scanPath || destDir);
     } catch (e) {
-      alert('Failed to start test scan: ' + e.message + '. Configure API key and region first.');
+      alert('Failed to start test scan: ' + e.message);
     }
   }
 

@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -12,12 +13,15 @@ type Config struct {
 	ScannerType        string `json:"scannerType,omitempty"` // "saas" (default) or "local"
 	LocalScannerURL    string `json:"localScannerUrl,omitempty"`
 	LocalScannerAPIKey string `json:"localScannerApiKey,omitempty"`
+	LocalScannerProtocol string `json:"localScannerProtocol,omitempty"` // always "grpc" when scannerType is local
+	LocalScannerTLS      bool   `json:"localScannerTls,omitempty"`
 	ActionOnMalware    string `json:"actionOnMalware,omitempty"`    // "log", "quarantine", "delete"
 	QuarantinePath     string `json:"quarantinePath,omitempty"`
 	ScanConcurrency    int    `json:"scanConcurrency,omitempty"`    // 0 = use default (8)
 	MaxConcurrentScans int    `json:"maxConcurrentScans,omitempty"` // 0 = unlimited
 	HashEnabled        bool   `json:"hashEnabled,omitempty"`        // generate hashes for malicious files in reports
 	PredictiveML       bool   `json:"predictiveML,omitempty"`       // enable predictive machine learning (PML)
+	ReportMode         string `json:"reportMode,omitempty"`         // "stats" or "all"
 	mu                 sync.RWMutex
 }
 
@@ -39,14 +43,30 @@ func (c *Config) Get() (apiKey, region string) {
 	return c.APIKey, c.Region
 }
 
-func (c *Config) GetScanner() (scannerType, localURL, localAPIKey string) {
+func (c *Config) GetScanner() (scannerType, localURL, localAPIKey, localProtocol string, localTLS bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	scannerType = c.ScannerType
 	if scannerType == "" {
 		scannerType = "saas"
 	}
-	return scannerType, c.LocalScannerURL, c.LocalScannerAPIKey
+	localProtocol = strings.TrimSpace(strings.ToLower(c.LocalScannerProtocol))
+	localTLS = c.LocalScannerTLS
+	if scannerType == "local" {
+		localProtocol = "grpc"
+		raw := strings.TrimSpace(c.LocalScannerURL)
+		low := strings.ToLower(raw)
+		if localProtocol == "grpc" && !localTLS {
+			if strings.HasPrefix(low, "grpcs://") || strings.HasPrefix(low, "https://") {
+				localTLS = true
+			}
+		}
+	} else {
+		if localProtocol == "" {
+			localProtocol = "grpc"
+		}
+	}
+	return scannerType, c.LocalScannerURL, c.LocalScannerAPIKey, localProtocol, localTLS
 }
 
 func (c *Config) Set(apiKey, region string) {
@@ -56,15 +76,23 @@ func (c *Config) Set(apiKey, region string) {
 	c.Region = region
 }
 
-func (c *Config) SetScanner(scannerType, localURL, localAPIKey string) {
+func (c *Config) SetScanner(scannerType, localURL, localAPIKey, localProtocol string, localTLS bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if scannerType != "local" {
 		scannerType = "saas"
 	}
+	localProtocol = strings.TrimSpace(strings.ToLower(localProtocol))
+	if scannerType == "local" {
+		localProtocol = "grpc"
+	} else if localProtocol == "" {
+		localProtocol = "grpc"
+	}
 	c.ScannerType = scannerType
 	c.LocalScannerURL = localURL
 	c.LocalScannerAPIKey = localAPIKey
+	c.LocalScannerProtocol = localProtocol
+	c.LocalScannerTLS = localTLS
 }
 
 func (c *Config) GetScanAction() (action, quarantinePath string) {
@@ -101,6 +129,15 @@ func (c *Config) GetPredictiveML() bool {
 	return c.PredictiveML
 }
 
+func (c *Config) GetReportMode() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.ReportMode == "all" {
+		return "all"
+	}
+	return "stats"
+}
+
 func (c *Config) SetScanAction(action, quarantinePath string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -133,6 +170,16 @@ func (c *Config) SetPredictiveML(enabled bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.PredictiveML = enabled
+}
+
+func (c *Config) SetReportMode(mode string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if mode == "all" {
+		c.ReportMode = "all"
+		return
+	}
+	c.ReportMode = "stats"
 }
 
 func (c *Config) Save(path string) error {

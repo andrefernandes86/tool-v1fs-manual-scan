@@ -3,14 +3,13 @@ package api
 import (
 	"encoding/json"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
+	v1client "github.com/trendmicro/tm-v1-fs-golang-sdk"
 	"v1fs-scanner/internal/config"
 	"v1fs-scanner/internal/scanner"
 )
@@ -45,6 +44,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.URL.Path == "/api/scanner/test" && r.Method == http.MethodPost:
 		h.testScanner(w, r)
+		return
+	case r.URL.Path == "/api/scanner/compat" && r.Method == http.MethodPost:
+		h.compatScanner(w, r)
 		return
 	case r.URL.Path == "/api/config/scan-action" && r.Method == http.MethodPost:
 		h.saveScanAction(w, r)
@@ -101,12 +103,13 @@ func (h *Handler) serveStatic(name string, w http.ResponseWriter, r *http.Reques
 
 func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 	apiKey, region := h.cfg.Get()
-	scannerType, localURL, _ := h.cfg.GetScanner()
+	scannerType, localURL, _, localProtocol, localTLS := h.cfg.GetScanner()
 	action, quarantinePath := h.cfg.GetScanAction()
 	concurrency := h.cfg.GetScanConcurrency()
 	maxScans := h.cfg.GetMaxConcurrentScans()
 	hashEnabled := h.cfg.GetHashEnabled()
 	predictiveML := h.cfg.GetPredictiveML()
+	reportMode := h.cfg.GetReportMode()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"apiKeySet":          apiKey != "",
@@ -114,12 +117,15 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"configured":         apiKey != "" && region != "",
 		"scannerType":        scannerType,
 		"localScannerUrl":    localURL,
+		"localScannerProtocol": localProtocol,
+		"localScannerTls":    localTLS,
 		"actionOnMalware":    action,
 		"quarantinePath":     quarantinePath,
 		"scanConcurrency":    concurrency,
 		"maxConcurrentScans": maxScans,
 		"hashEnabled":        hashEnabled,
 		"predictiveML":       predictiveML,
+		"reportMode":         reportMode,
 	})
 }
 
@@ -130,6 +136,8 @@ func (h *Handler) saveConfig(w http.ResponseWriter, r *http.Request) {
 		ScannerType        string `json:"scannerType"`
 		LocalScannerURL    string `json:"localScannerUrl"`
 		LocalScannerAPIKey string `json:"localScannerApiKey"`
+		LocalScannerProtocol string `json:"localScannerProtocol"`
+		LocalScannerTLS      bool   `json:"localScannerTls"`
 		ActionOnMalware    string `json:"actionOnMalware"`
 		QuarantinePath     string `json:"quarantinePath"`
 	}
@@ -143,10 +151,20 @@ func (h *Handler) saveConfig(w http.ResponseWriter, r *http.Request) {
 	if body.ScannerType == "" {
 		body.ScannerType = "saas"
 	}
+	localURLRaw := strings.TrimSpace(body.LocalScannerURL)
 	if body.ScannerType == "local" {
-		if strings.TrimSpace(body.LocalScannerURL) == "" {
-			http.Error(w, "localScannerUrl required for local scanner", http.StatusBadRequest)
+		if localURLRaw == "" {
+			http.Error(w, "local scanner endpoint is required", http.StatusBadRequest)
 			return
+		}
+		body.LocalScannerProtocol = "grpc"
+		if normalizeLocalScannerGRPCAddr(localURLRaw) == "" {
+			http.Error(w, "invalid gRPC address for local scanner", http.StatusBadRequest)
+			return
+		}
+		low := strings.ToLower(localURLRaw)
+		if strings.HasPrefix(low, "grpcs://") || strings.HasPrefix(low, "https://") {
+			body.LocalScannerTLS = true
 		}
 	} else {
 		if body.Region == "" || body.APIKey == "" {
@@ -155,7 +173,7 @@ func (h *Handler) saveConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.cfg.Set(body.APIKey, body.Region)
-	h.cfg.SetScanner(body.ScannerType, strings.TrimSpace(body.LocalScannerURL), strings.TrimSpace(body.LocalScannerAPIKey))
+	h.cfg.SetScanner(body.ScannerType, localURLRaw, strings.TrimSpace(body.LocalScannerAPIKey), body.LocalScannerProtocol, body.LocalScannerTLS)
 	action := strings.TrimSpace(body.ActionOnMalware)
 	if action != "log" && action != "quarantine" && action != "delete" {
 		action = "log"
@@ -170,7 +188,7 @@ func (h *Handler) saveConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) testScanner(w http.ResponseWriter, r *http.Request) {
-	scannerType, localURL, _ := h.cfg.GetScanner()
+	scannerType, localURL, localAPIKey, _, localTLS := h.cfg.GetScanner()
 	type result struct {
 		OK      bool   `json:"ok"`
 		Message string `json:"message"`
@@ -180,51 +198,91 @@ func (h *Handler) testScanner(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "local scanner URL is not configured", http.StatusBadRequest)
 			return
 		}
-		u := strings.TrimRight(localURL, "/")
-		client := &http.Client{Timeout: 5 * time.Second}
-		req, _ := http.NewRequest(http.MethodGet, u+"/health", nil)
-		resp, err := client.Do(req)
+		addr := normalizeLocalScannerGRPCAddr(localURL)
+		if addr == "" {
+			http.Error(w, "local scanner gRPC address is invalid", http.StatusBadRequest)
+			return
+		}
+		client, err := v1client.NewClientInternal(strings.TrimSpace(localAPIKey), addr, localTLS, "")
 		if err != nil {
-			// Try root endpoint as fallback
-			req2, _ := http.NewRequest(http.MethodGet, u, nil)
-			resp2, err2 := client.Do(req2)
-			if err2 != nil {
-				http.Error(w, "local scanner is not reachable: "+err.Error(), http.StatusBadGateway)
-				return
-			}
-			defer resp2.Body.Close()
-			if resp2.StatusCode < 200 || resp2.StatusCode >= 500 {
-				http.Error(w, "local scanner responded unexpectedly", http.StatusBadGateway)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(result{OK: true, Message: "local scanner responded successfully"})
+			http.Error(w, "local gRPC scanner is not reachable: "+err.Error(), http.StatusBadGateway)
 			return
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode < 200 || resp.StatusCode >= 500 {
-			http.Error(w, "local scanner health check failed", http.StatusBadGateway)
-			return
-		}
+		client.Destroy()
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(result{OK: true, Message: "local scanner is reachable"})
+		msg := "local gRPC scanner is reachable at " + addr
+		if !localTLS {
+			msg += " (TLS disabled)"
+		}
+		json.NewEncoder(w).Encode(result{OK: true, Message: msg})
 		return
 	}
-	// SaaS mode: verify configured credentials and region by opening TCP to region endpoint.
+	// SaaS mode: verify required configuration. Network checks can fail in restricted
+	// environments even when scanner configuration is valid, so keep this check reliable.
 	apiKey, region := h.cfg.Get()
 	if apiKey == "" || region == "" {
 		http.Error(w, "api key and region are required for saas scanner", http.StatusBadRequest)
 		return
 	}
-	host := region + ".xdr.trendmicro.com:443"
-	conn, err := net.DialTimeout("tcp", host, 5*time.Second)
-	if err != nil {
-		http.Error(w, "saas endpoint is not reachable for region "+region, http.StatusBadGateway)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result{OK: true, Message: "saas scanner configuration looks valid"})
+}
+
+func (h *Handler) compatScanner(w http.ResponseWriter, r *http.Request) {
+	scannerType, localURL, localAPIKey, _, localTLS := h.cfg.GetScanner()
+	type result struct {
+		OK      bool   `json:"ok"`
+		Message string `json:"message"`
+	}
+	if scannerType == "local" {
+		if localURL == "" {
+			http.Error(w, "local scanner URL is not configured", http.StatusBadRequest)
+			return
+		}
+		addr := normalizeLocalScannerGRPCAddr(localURL)
+		if addr == "" {
+			http.Error(w, "local scanner gRPC address is invalid", http.StatusBadRequest)
+			return
+		}
+		client, err := v1client.NewClientInternal(strings.TrimSpace(localAPIKey), addr, localTLS, "")
+		if err != nil {
+			http.Error(w, "compatibility check failed to connect: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer client.Destroy()
+		warn, probeErr := localGRPCCompatProbe(client)
+		if probeErr != nil {
+			http.Error(w, "scanner compatibility check failed: "+probeErr.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		msg := "local gRPC scanner accepted a probe scan (same tags and ScanFile→ScanBuffer path as directory scans)"
+		if warn != "" {
+			msg = warn
+		}
+		json.NewEncoder(w).Encode(result{OK: true, Message: msg})
 		return
 	}
-	conn.Close()
+
+	apiKey, region := h.cfg.Get()
+	if apiKey == "" || region == "" {
+		http.Error(w, "api key and region are required for saas scanner", http.StatusBadRequest)
+		return
+	}
+	client, err := v1client.NewClient(apiKey, region)
+	if err != nil {
+		http.Error(w, "failed to initialize saas scanner: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer client.Destroy()
+	probe := []byte("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+	_, err = client.ScanBuffer(probe, "eicar-compat-check.com", []string{"compat-check"})
+	if err != nil {
+		http.Error(w, "saas compatibility check failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result{OK: true, Message: "saas scanner endpoint is reachable"})
+	json.NewEncoder(w).Encode(result{OK: true, Message: "saas scanner is compatible and accepted a probe scan"})
 }
 
 func (h *Handler) saveScanAction(w http.ResponseWriter, r *http.Request) {
@@ -235,6 +293,7 @@ func (h *Handler) saveScanAction(w http.ResponseWriter, r *http.Request) {
 		MaxConcurrentScans *int   `json:"maxConcurrentScans"`
 		HashEnabled        *bool  `json:"hashEnabled"`
 		PredictiveML       *bool  `json:"predictiveML"`
+		ReportMode         string `json:"reportMode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -271,6 +330,7 @@ func (h *Handler) saveScanAction(w http.ResponseWriter, r *http.Request) {
 	if body.PredictiveML != nil {
 		h.cfg.SetPredictiveML(*body.PredictiveML)
 	}
+	h.cfg.SetReportMode(strings.TrimSpace(strings.ToLower(body.ReportMode)))
 	if err := h.cfg.Save(h.configPath); err != nil {
 		http.Error(w, "failed to save config", http.StatusInternalServerError)
 		return
@@ -290,40 +350,75 @@ func (h *Handler) getTestSamples(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listDirs(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
-	entries, err := listRootsOrDirs(path)
+	listing, err := ListDirectoryListing(path)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(entries)
+	json.NewEncoder(w).Encode(listing)
 }
+
+const maxScanRoots = 32
 
 func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Path       string `json:"path"`
-		ReportName string `json:"reportName"`
+		Path       string   `json:"path"`
+		Paths      []string `json:"paths"`
+		ReportName string   `json:"reportName"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
-	path := strings.TrimSpace(body.Path)
-	if path == "" {
-		http.Error(w, "path required", http.StatusBadRequest)
+	var roots []string
+	for _, p := range body.Paths {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		p = filepath.Clean(p)
+		if p == "." {
+			p = string(filepath.Separator)
+		}
+		roots = append(roots, p)
+	}
+	if len(roots) == 0 {
+		p := strings.TrimSpace(body.Path)
+		if p == "" {
+			http.Error(w, "path or paths required", http.StatusBadRequest)
+			return
+		}
+		p = filepath.Clean(p)
+		if p == "." {
+			p = string(filepath.Separator)
+		}
+		roots = []string{p}
+	}
+	if len(roots) > maxScanRoots {
+		http.Error(w, "too many paths (max "+strconv.Itoa(maxScanRoots)+")", http.StatusBadRequest)
 		return
 	}
-	path = filepath.Clean(path)
-	if path == "." {
-		path = "/"
+	uniq := make(map[string]struct{})
+	var scanRoots []string
+	for _, path := range roots {
+		if _, dup := uniq[path]; dup {
+			continue
+		}
+		uniq[path] = struct{}{}
+		info, err := os.Stat(path)
+		if err != nil || !info.IsDir() {
+			http.Error(w, "path is not a valid directory: "+path, http.StatusBadRequest)
+			return
+		}
+		scanRoots = append(scanRoots, path)
 	}
-	info, err := os.Stat(path)
-	if err != nil || !info.IsDir() {
-		http.Error(w, "path is not a valid directory", http.StatusBadRequest)
+	if len(scanRoots) == 0 {
+		http.Error(w, "no valid directories to scan", http.StatusBadRequest)
 		return
 	}
 	apiKey, region := h.cfg.Get()
-	scannerType, localURL, localAPIKey := h.cfg.GetScanner()
+	scannerType, localURL, localAPIKey, localProtocol, localTLS := h.cfg.GetScanner()
 	if scannerType == "saas" && (apiKey == "" || region == "") {
 		http.Error(w, "configure API key and region first", http.StatusBadRequest)
 		return
@@ -358,15 +453,25 @@ func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 		Concurrency:     concurrency,
 		GenerateHashes:  h.cfg.GetHashEnabled(),
 		PredictiveML:    h.cfg.GetPredictiveML(),
+		ReportMode:      h.cfg.GetReportMode(),
 		ScannerType:     scannerType,
-		LocalScannerURL: localURL,
+		LocalScannerURL: normalizeLocalScannerURL(localURL),
+		LocalScannerProtocol: localProtocol,
+		LocalScannerTLS: localTLS,
 		LocalAPIKey:     localAPIKey,
 	}
-	task := h.store.Create(path)
+	if localProtocol == "grpc" {
+		opts.LocalScannerURL = normalizeLocalScannerGRPCAddr(localURL)
+	}
+	task := h.store.Create(scanRoots)
+	if task == nil {
+		http.Error(w, "failed to create scan task", http.StatusInternalServerError)
+		return
+	}
 	if rn := strings.TrimSpace(body.ReportName); rn != "" {
 		task.SetReportName(rn)
 	}
-	go h.store.RunScan(task.ID, path, apiKey, region, opts)
+	go h.store.RunScan(task.ID, scanRoots, apiKey, region, opts)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"taskId": task.ID})
@@ -395,6 +500,8 @@ func (h *Handler) scanStatus(w http.ResponseWriter, r *http.Request, id string) 
 		"reportName":   snap.ReportName,
 		"currentFile":  snap.CurrentFile,
 		"malicious":    snap.Malicious,
+		"scanErrors":   snap.ScanErrors,
+		"lastScanError": snap.LastScanError,
 		"error":        snap.Error,
 		"reportPath":   reportRel,
 	})
@@ -473,4 +580,80 @@ func (h *Handler) downloadReport(w http.ResponseWriter, r *http.Request, name st
 
 func fmtSize(n int64) string {
 	return strconv.FormatInt(n, 10)
+}
+
+// localGRPCCompatClient matches the scan methods used by RunScan for local gRPC.
+type localGRPCCompatClient interface {
+	ScanFile(path string, tags []string) (string, error)
+	ScanBuffer(data []byte, filename string, tags []string) (string, error)
+}
+
+func grpcLocalProbeSoftFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	low := strings.ToLower(msg)
+	return strings.Contains(msg, "code = Unimplemented") ||
+		strings.Contains(low, "not compatible") ||
+		strings.Contains(low, "please upgrade")
+}
+
+// localGRPCCompatProbe mirrors directory scans: ScanFile first, then ScanBuffer with v1fs-scanner tags.
+// Some gateways return Unimplemented / "not compatible" for buffer-only probes while still scanning files.
+func localGRPCCompatProbe(client localGRPCCompatClient) (warning string, err error) {
+	probe := []byte("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+	tmp, err := os.CreateTemp("", "v1fs-compat-*.com")
+	if err != nil {
+		return "", err
+	}
+	path := tmp.Name()
+	defer os.Remove(path)
+	if _, werr := tmp.Write(probe); werr != nil {
+		tmp.Close()
+		return "", werr
+	}
+	if cerr := tmp.Close(); cerr != nil {
+		return "", cerr
+	}
+	tags := []string{"v1fs-scanner"}
+	_, errFile := client.ScanFile(path, tags)
+	if errFile == nil {
+		return "", nil
+	}
+	if !grpcLocalProbeSoftFailure(errFile) {
+		return "", errFile
+	}
+	_, errBuf := client.ScanBuffer(probe, "eicar.com", tags)
+	if errBuf == nil {
+		return "", nil
+	}
+	if grpcLocalProbeSoftFailure(errBuf) {
+		return "Gateway is reachable but rejected the malware probe with a version-handshake error. If directory or EICAR test scans still complete, your deployment is usable; otherwise upgrade the gateway or File Security SDK to matching versions.", nil
+	}
+	return "", errBuf
+}
+
+func normalizeLocalScannerURL(raw string) string {
+	u := strings.TrimSpace(raw)
+	if u == "" {
+		return ""
+	}
+	if !strings.HasPrefix(strings.ToLower(u), "http://") && !strings.HasPrefix(strings.ToLower(u), "https://") {
+		u = "http://" + u
+	}
+	return u
+}
+
+func normalizeLocalScannerGRPCAddr(raw string) string {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return ""
+	}
+	v = strings.TrimPrefix(v, "grpc://")
+	v = strings.TrimPrefix(v, "grpcs://")
+	v = strings.TrimPrefix(v, "http://")
+	v = strings.TrimPrefix(v, "https://")
+	v = strings.TrimSuffix(v, "/")
+	return v
 }

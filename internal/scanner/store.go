@@ -1,16 +1,14 @@
 package scanner
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
-	"mime/multipart"
-	"net/http"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,12 +42,16 @@ type Task struct {
 	ID           string       `json:"id"`
 	Path         string       `json:"path"`
 	ReportName   string       `json:"reportName,omitempty"`
+	ReportMode   string       `json:"reportMode,omitempty"`
 	StartedAt    time.Time    `json:"startedAt"`
 	FinishedAt   *time.Time   `json:"finishedAt,omitempty"`
 	TotalFiles   int          `json:"totalFiles"`
 	ScannedCount int          `json:"scannedCount"`
 	CurrentFile  string       `json:"currentFile"`
 	Malicious    []Malicious  `json:"malicious"`
+	CleanFiles   []string     `json:"cleanFiles,omitempty"`
+	ScanErrors   int          `json:"scanErrors"`
+	LastScanError string      `json:"lastScanError,omitempty"`
 	Error        string       `json:"error,omitempty"`
 	ReportPath   string       `json:"reportPath,omitempty"`
 	mu           sync.RWMutex
@@ -64,9 +66,10 @@ type Malicious struct {
 }
 
 type scanResponse struct {
-	ScanResult    int    `json:"scanResult"`
+	ScanResult    any    `json:"scanResult"`
 	FileName      string `json:"fileName"`
 	FilePath      string `json:"filePath"`
+	MalwareName   string `json:"malwareName"`
 	FoundMalwares []struct {
 		FileName    string `json:"fileName"`
 		MalwareName string `json:"malwareName"`
@@ -87,6 +90,20 @@ type verboseScanResponse struct {
 	} `json:"result"`
 }
 
+func nonZeroScanResult(v any) bool {
+	switch x := v.(type) {
+	case float64:
+		return x != 0
+	case int:
+		return x != 0
+	case string:
+		x = strings.TrimSpace(x)
+		return x != "" && x != "0"
+	default:
+		return false
+	}
+}
+
 // ScanOptions configures what to do when malware is detected and how to run the scan.
 type ScanOptions struct {
 	ActionOnMalware string // "log", "quarantine", "delete"
@@ -94,27 +111,143 @@ type ScanOptions struct {
 	Concurrency     int  // number of files scanned in parallel; 0 = use DefaultConcurrency
 	GenerateHashes  bool // when true, compute SHA-256 for malicious files
 	PredictiveML    bool // when true, enable predictive machine learning (PML) hints
+	ReportMode      string // "stats" (default) or "all"
 	ScannerType     string
 	LocalScannerURL string
+	LocalScannerProtocol string // ignored for local scans (always gRPC); retained for API shape
+	LocalScannerTLS bool
 	LocalAPIKey     string
 }
 
-func (s *TaskStore) Create(path string) *Task {
-	id := time.Now().Format("20060102-150405") + "-" + filepath.Base(path)
-	if id == "" || id == "." {
-		id = time.Now().Format("20060102-150405")
+func (s *TaskStore) Create(rootPaths []string) *Task {
+	if len(rootPaths) == 0 {
+		return nil
 	}
+	display := strings.Join(rootPaths, "; ")
+	id := time.Now().Format("20060102150405") + "-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	t := &Task{
-		ID:        id,
-		Path:      path,
-		StartedAt: time.Now(),
-		Malicious: nil,
-		done:      make(chan struct{}),
+		ID:         id,
+		Path:       display,
+		StartedAt:  time.Now(),
+		Malicious:  nil,
+		ReportMode: "stats",
+		done:       make(chan struct{}),
 	}
 	s.mu.Lock()
 	s.tasks[id] = t
 	s.mu.Unlock()
 	return t
+}
+
+// linuxVirtualSkipPath is true for Linux pseudo-filesystems (/proc, /sys, /dev, /run) that
+// cause permission errors or confuse the scanner. Applies to both directories and files
+// (e.g. symlinks or bind mounts that surface paths under /sys).
+func linuxVirtualSkipPath(absPath string) bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	p := filepath.Clean(absPath)
+	sep := string(filepath.Separator)
+	for _, vp := range []string{"/proc", "/sys", "/dev", "/run"} {
+		if p == vp || strings.HasPrefix(p, vp+sep) {
+			return true
+		}
+	}
+	// Host root bind-mounted under e.g. /mnt/host/sys/...
+	for _, mid := range []string{sep + "proc" + sep, sep + "sys" + sep, sep + "dev" + sep, sep + "run" + sep} {
+		if strings.Contains(p, mid) {
+			return true
+		}
+	}
+	return false
+}
+
+func collectScanFiles(rootPaths []string) []string {
+	seen := make(map[string]struct{})
+	var files []string
+	for _, root := range rootPaths {
+		root = filepath.Clean(root)
+		filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if linuxVirtualSkipPath(path) {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !d.Type().IsRegular() {
+				return nil
+			}
+			if _, ok := seen[path]; ok {
+				return nil
+			}
+			seen[path] = struct{}{}
+			files = append(files, path)
+			return nil
+		})
+	}
+	return files
+}
+
+func filterVirtualScanPaths(paths []string) []string {
+	if runtime.GOOS != "linux" {
+		return paths
+	}
+	var out []string
+	for _, p := range paths {
+		if !linuxVirtualSkipPath(p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// reportPDFBasename returns a single safe filename segment (no slashes) for the PDF on disk.
+func reportPDFBasename(taskID string) string {
+	var b strings.Builder
+	for _, r := range taskID {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	s := strings.Trim(strings.TrimSpace(b.String()), "_")
+	if s == "" {
+		s = "scan"
+	}
+	return s + ".pdf"
+}
+
+func softenScanError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	lower := strings.ToLower(msg)
+	if !strings.Contains(lower, "permission denied") && !strings.Contains(lower, "operation not permitted") {
+		return err
+	}
+	if strings.Contains(msg, "/proc/") || strings.Contains(msg, "/sys/") || strings.Contains(msg, "/dev/") ||
+		strings.Contains(msg, "/run/") || strings.Contains(lower, "uevent") {
+		return errors.New("skipped a restricted system path (expected when scanning broad trees in a container)")
+	}
+	if strings.Contains(lower, "not ready") && strings.Contains(lower, "permission") {
+		return errors.New("scanner hit unreadable system files; use a narrower folder (e.g. /data) instead of the full host root")
+	}
+	return err
+}
+
+func isBenignScanFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.HasPrefix(s, "skipped a restricted system path") ||
+		strings.HasPrefix(s, "scanner hit unreadable system files")
 }
 
 func (s *TaskStore) Get(id string) *Task {
@@ -131,6 +264,7 @@ func (s *TaskStore) List() []*Task {
 		t.mu.RLock()
 		copy := *t
 		copy.Malicious = append([]Malicious(nil), t.Malicious...)
+		copy.CleanFiles = append([]string(nil), t.CleanFiles...)
 		t.mu.RUnlock()
 		list = append(list, &copy)
 	}
@@ -180,6 +314,26 @@ func (t *Task) AddMalicious(fileName, filePath, malwareName, fileHash string) {
 	})
 }
 
+func (t *Task) AddClean(filePath string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.CleanFiles = append(t.CleanFiles, filePath)
+}
+
+func (t *Task) AddScanError(err error) {
+	if err == nil {
+		return
+	}
+	soft := softenScanError(err)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if isBenignScanFailure(soft) {
+		return
+	}
+	t.ScanErrors++
+	t.LastScanError = soft.Error()
+}
+
 func (t *Task) Finish(err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -201,44 +355,91 @@ func (t *Task) SetReportName(name string) {
 	t.ReportName = name
 }
 
+func (t *Task) SetReportMode(mode string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if mode == "all" {
+		t.ReportMode = "all"
+		return
+	}
+	t.ReportMode = "stats"
+}
+
 func (t *Task) Snapshot() Task {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	snap := *t
 	snap.Malicious = append([]Malicious(nil), t.Malicious...)
+	snap.CleanFiles = append([]string(nil), t.CleanFiles...)
 	return snap
 }
 
-func (s *TaskStore) RunScan(taskID string, rootPath string, apiKey, region string, opts ScanOptions) {
+func (s *TaskStore) RunScan(taskID string, rootPaths []string, apiKey, region string, opts ScanOptions) {
 	t := s.Get(taskID)
 	if t == nil {
+		return
+	}
+	if len(rootPaths) == 0 {
+		t.Finish(errors.New("no scan roots"))
 		return
 	}
 	scannerType := opts.ScannerType
 	if scannerType == "" {
 		scannerType = "saas"
 	}
-	var client *v1client.Client
-	var err error
+	localProtocol := strings.TrimSpace(strings.ToLower(opts.LocalScannerProtocol))
+	if scannerType == "local" {
+		localProtocol = "grpc"
+	} else if localProtocol != "grpc" {
+		localProtocol = "http"
+	}
+
+	scanWithSaaS := func(_ string, _ []string) (string, error) {
+		return "", errors.New("saas scanner is not configured")
+	}
 	if scannerType == "saas" {
-		client, err = v1client.NewClient(apiKey, region)
+		client, err := v1client.NewClient(apiKey, region)
 		if err != nil {
 			t.Finish(err)
 			return
 		}
 		defer client.Destroy()
+		scanWithSaaS = func(path string, tags []string) (string, error) {
+			return client.ScanFile(path, tags)
+		}
+	}
+	scanWithLocalGRPC := func(_ string, _ []string) (string, error) {
+		return "", errors.New("local gRPC scanner is not configured")
+	}
+	if scannerType == "local" {
+		client, err := v1client.NewClientInternal(strings.TrimSpace(opts.LocalAPIKey), strings.TrimSpace(opts.LocalScannerURL), opts.LocalScannerTLS, "")
+		if err != nil {
+			t.Finish(err)
+			return
+		}
+		// Local gRPC deployments can reject PML/feedback toggles depending on
+		// gateway/scanner version. Keep local scans protocol-compatible.
+		defer client.Destroy()
+		scanWithLocalGRPC = func(path string, tags []string) (string, error) {
+			resp, err := client.ScanFile(path, tags)
+			if err == nil {
+				return resp, nil
+			}
+			// Some local anti-malware gateway versions reject the ScanFile RPC path
+			// with "Unimplemented/compatible" while still supporting ScanBuffer.
+			msg := err.Error()
+			if !strings.Contains(msg, "code = Unimplemented") && !strings.Contains(strings.ToLower(msg), "not compatible") {
+				return "", err
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return "", err
+			}
+			return client.ScanBuffer(data, filepath.Base(path), tags)
+		}
 	}
 
-	var files []string
-	filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if info.Mode().IsRegular() {
-			files = append(files, path)
-		}
-		return nil
-	})
+	files := filterVirtualScanPaths(collectScanFiles(rootPaths))
 
 	total := len(files)
 	t.UpdateProgress("", 0, total)
@@ -246,9 +447,13 @@ func (s *TaskStore) RunScan(taskID string, rootPath string, apiKey, region strin
 	if opts.ActionOnMalware == "" {
 		opts.ActionOnMalware = "log"
 	}
+	if opts.ReportMode != "all" {
+		opts.ReportMode = "stats"
+	}
+	t.SetReportMode(opts.ReportMode)
 
 	tags := []string{"v1fs-scanner"}
-	if opts.PredictiveML {
+	if opts.PredictiveML && !(scannerType == "local" && localProtocol == "grpc") {
 		// Align with vendor docs: enable PML and feedback flags.
 		tags = append(tags, "pml:true", "feedback:true")
 	}
@@ -271,16 +476,22 @@ func (s *TaskStore) RunScan(taskID string, rootPath string, apiKey, region strin
 			defer wg.Done()
 			for path := range jobs {
 				var fileName, filePath, malwareName string
+				var err error
 				if scannerType == "local" {
-					fileName, filePath, malwareName, err = scanWithLocalScanner(path, opts.LocalScannerURL, opts.LocalAPIKey, tags)
+					var resp string
+					resp, err = scanWithLocalGRPC(path, tags)
+					if err == nil {
+						fileName, filePath, malwareName = parseScanResponse(resp, path)
+					}
 				} else {
 					var resp string
-					resp, err = client.ScanFile(path, tags)
+					resp, err = scanWithSaaS(path, tags)
 					if err == nil {
 						fileName, filePath, malwareName = parseScanResponse(resp, path)
 					}
 				}
 				if err != nil {
+					t.AddScanError(err)
 					t.IncrementScanned(path)
 					continue
 				}
@@ -291,6 +502,8 @@ func (s *TaskStore) RunScan(taskID string, rootPath string, apiKey, region strin
 					}
 					t.AddMalicious(fileName, filePath, malwareName, hash)
 					performAction(path, opts)
+				} else {
+					t.AddClean(path)
 				}
 				t.IncrementScanned(path)
 			}
@@ -316,87 +529,11 @@ func (s *TaskStore) RunScan(taskID string, rootPath string, apiKey, region strin
 	t.Finish(nil)
 }
 
-func scanWithLocalScanner(filePath, baseURL, apiKey string, tags []string) (fileName, detectedPath, malwareName string, err error) {
-	fh, err := os.Open(filePath)
-	if err != nil {
-		return "", "", "", err
-	}
-	defer fh.Close()
-
-	var buf bytes.Buffer
-	w := multipart.NewWriter(&buf)
-	part, err := w.CreateFormFile("file", filepath.Base(filePath))
-	if err != nil {
-		return "", "", "", err
-	}
-	if _, err := io.Copy(part, fh); err != nil {
-		return "", "", "", err
-	}
-	for _, tag := range tags {
-		_ = w.WriteField("tags", tag)
-	}
-	if err := w.Close(); err != nil {
-		return "", "", "", err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(baseURL, "/")+"/scan", &buf)
-	if err != nil {
-		return "", "", "", err
-	}
-	req.Header.Set("Content-Type", w.FormDataContentType())
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-	httpClient := &http.Client{Timeout: 60 * time.Second}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", "", "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", "", errors.New("local scanner returned non-2xx response")
-	}
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", "", "", err
-	}
-	// Try SaaS-like response first
-	fileName, detectedPath, malwareName = parseScanResponse(string(data), filePath)
-	if malwareName != "" {
-		return fileName, detectedPath, malwareName, nil
-	}
-
-	// Generic local response fallback
-	var generic struct {
-		FileName    string `json:"fileName"`
-		FilePath    string `json:"filePath"`
-		Malicious   bool   `json:"malicious"`
-		Infected    bool   `json:"infected"`
-		Threat      bool   `json:"threat"`
-		MalwareName string `json:"malwareName"`
-	}
-	if json.Unmarshal(data, &generic) == nil {
-		if generic.Malicious || generic.Infected || generic.Threat {
-			if generic.FileName == "" {
-				generic.FileName = filepath.Base(filePath)
-			}
-			if generic.FilePath == "" {
-				generic.FilePath = filePath
-			}
-			if generic.MalwareName == "" {
-				generic.MalwareName = "Detected"
-			}
-			return generic.FileName, generic.FilePath, generic.MalwareName, nil
-		}
-	}
-	return filepath.Base(filePath), filePath, "", nil
-}
-
 // parseScanResponse returns (fileName, filePath, malwareName). If malware detected, malwareName is non-empty.
 // Supports both concise and verbose SDK response formats.
 func parseScanResponse(resp string, actualFilePath string) (fileName, filePath, malwareName string) {
 	var sr scanResponse
-	if json.Unmarshal([]byte(resp), &sr) == nil && sr.ScanResult != 0 {
+	if json.Unmarshal([]byte(resp), &sr) == nil && (nonZeroScanResult(sr.ScanResult) || len(sr.FoundMalwares) > 0 || sr.MalwareName != "") {
 		filePath = sr.FilePath
 		if filePath == "" {
 			filePath = actualFilePath
@@ -410,6 +547,8 @@ func parseScanResponse(resp string, actualFilePath string) (fileName, filePath, 
 			for j := 1; j < len(sr.FoundMalwares); j++ {
 				malwareName += ", " + sr.FoundMalwares[j].MalwareName
 			}
+		} else if sr.MalwareName != "" {
+			malwareName = sr.MalwareName
 		} else {
 			malwareName = "Detected"
 		}
@@ -479,13 +618,47 @@ func performAction(filePath string, opts ScanOptions) {
 	}
 }
 
+const pdfBottomReserveMM = 18
+
+func pdfPageBottom(pdf *gofpdf.Fpdf) float64 {
+	_, h := pdf.GetPageSize()
+	return h - pdfBottomReserveMM
+}
+
+// pdfRow reserves vertical space and starts a new page when needed so long reports
+// (thousands of clean files) are not drawn past the end of the page.
+func pdfRow(pdf *gofpdf.Fpdf, rowH float64, style string, size float64) {
+	if pdf.GetY()+rowH > pdfPageBottom(pdf) {
+		pdf.AddPage()
+	}
+	pdf.SetFont("Helvetica", style, size)
+}
+
+func pdfWriteRunesLine(pdf *gofpdf.Fpdf, rowH float64, maxRunes int, text string) {
+	runes := []rune(text)
+	if len(runes) == 0 {
+		pdfRow(pdf, rowH, "", 9)
+		pdf.CellFormat(0, rowH, " ", "", 1, "L", false, 0, "")
+		return
+	}
+	for i := 0; i < len(runes); i += maxRunes {
+		end := i + maxRunes
+		if end > len(runes) {
+			end = len(runes)
+		}
+		pdfRow(pdf, rowH, "", 9)
+		pdf.CellFormat(0, rowH, string(runes[i:end]), "", 1, "L", false, 0, "")
+	}
+}
+
 func (s *TaskStore) writePDF(taskID string, t *Task) (string, error) {
 	t.mu.RLock()
 	snap := *t
 	snap.Malicious = append([]Malicious(nil), t.Malicious...)
+	snap.CleanFiles = append([]string(nil), t.CleanFiles...)
 	t.mu.RUnlock()
 
-	name := taskID + ".pdf"
+	name := reportPDFBasename(taskID)
 	path := filepath.Join(s.reportsDir, name)
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
@@ -493,29 +666,51 @@ func (s *TaskStore) writePDF(taskID string, t *Task) (string, error) {
 	pdf.CellFormat(0, 10, "V1 File Security Scan Report", "", 1, "L", false, 0, "")
 	pdf.SetFont("Helvetica", "", 10)
 	if snap.ReportName != "" {
+		pdfRow(pdf, 6, "", 10)
 		pdf.CellFormat(0, 6, "Report name: "+snap.ReportName, "", 1, "L", false, 0, "")
 	}
-	pdf.CellFormat(0, 6, "Scan path: "+snap.Path, "", 1, "L", false, 0, "")
+	pdfRow(pdf, 6, "", 10)
+	pdf.CellFormat(0, 6, "Report mode: "+snap.ReportMode, "", 1, "L", false, 0, "")
+	pdfWriteRunesLine(pdf, 5, 95, "Scan path: "+snap.Path)
+	pdfRow(pdf, 6, "", 10)
 	pdf.CellFormat(0, 6, "Started: "+snap.StartedAt.Format(time.RFC3339), "", 1, "L", false, 0, "")
 	if snap.FinishedAt != nil {
+		pdfRow(pdf, 6, "", 10)
 		pdf.CellFormat(0, 6, "Finished: "+snap.FinishedAt.Format(time.RFC3339), "", 1, "L", false, 0, "")
 	}
+	pdfRow(pdf, 6, "", 10)
 	pdf.CellFormat(0, 6, "Files scanned: "+strconv.Itoa(snap.ScannedCount), "", 1, "L", false, 0, "")
+	pdfRow(pdf, 6, "", 10)
 	pdf.CellFormat(0, 6, "Malicious found: "+strconv.Itoa(len(snap.Malicious)), "", 1, "L", false, 0, "")
-	pdf.Ln(6)
+	pdf.Ln(4)
 
 	if len(snap.Malicious) > 0 {
-		pdf.SetFont("Helvetica", "B", 12)
+		pdfRow(pdf, 8, "B", 12)
 		pdf.CellFormat(0, 8, "Malicious files", "", 1, "L", false, 0, "")
-		pdf.SetFont("Helvetica", "", 9)
 		for _, m := range snap.Malicious {
-			pdf.CellFormat(0, 5, "File: "+m.FileName, "", 1, "L", false, 0, "")
-			pdf.CellFormat(0, 5, "  Path: "+m.FilePath, "", 1, "L", false, 0, "")
-			pdf.CellFormat(0, 5, "  Malware: "+m.MalwareName, "", 1, "L", false, 0, "")
+			pdfWriteRunesLine(pdf, 5, 100, "File: "+m.FileName)
+			pdfWriteRunesLine(pdf, 5, 100, "  Path: "+m.FilePath)
+			pdfWriteRunesLine(pdf, 5, 100, "  Malware: "+m.MalwareName)
 			if m.FileHash != "" {
-				pdf.CellFormat(0, 5, "  SHA-256: "+m.FileHash, "", 1, "L", false, 0, "")
+				pdfWriteRunesLine(pdf, 5, 100, "  SHA-256: "+m.FileHash)
 			}
+			pdfRow(pdf, 2, "", 9)
 			pdf.Ln(2)
+		}
+	}
+
+	if snap.ReportMode == "all" {
+		pdfRow(pdf, 8, "B", 12)
+		pdf.CellFormat(0, 8, "Clean files", "", 1, "L", false, 0, "")
+		if len(snap.CleanFiles) == 0 {
+			pdfRow(pdf, 5, "", 9)
+			pdf.CellFormat(0, 5, "None", "", 1, "L", false, 0, "")
+		} else {
+			pdfRow(pdf, 5, "", 9)
+			pdf.CellFormat(0, 5, "Total clean files listed: "+strconv.Itoa(len(snap.CleanFiles)), "", 1, "L", false, 0, "")
+			for _, pth := range snap.CleanFiles {
+				pdfWriteRunesLine(pdf, 4, 100, pth)
+			}
 		}
 	}
 

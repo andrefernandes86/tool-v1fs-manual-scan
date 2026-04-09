@@ -7,9 +7,27 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"v1fs-scanner/internal/scanner"
 )
+
+// Keep test sample contents in API layer too, so missing files can be recreated
+// without requiring a full container restart.
+const eicarContent = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+
+func ensureTestSamples(dir string) error {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "eicar.com"), []byte(eicarContent), 0644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("Hello World\n"), 0644); err != nil {
+		return err
+	}
+	return nil
+}
 
 // startTestScan copies a built-in sample file (EICAR or clean) into a destination
 // directory chosen by the user and starts a scan on that directory.
@@ -47,22 +65,37 @@ func (h *Handler) startTestScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	src := filepath.Join(h.testSamplesPath, srcName)
-	dest := filepath.Join(destDir, srcName)
+	// Scan walks the tree recursively. If the user picks a broad folder (e.g. /data),
+	// we would otherwise pick up /data/test-samples/eicar.com during a "clean" test.
+	// Use a fresh leaf directory that only contains the one sample file for this run.
+	testRoot := filepath.Join(destDir, "v1fs-test-"+strconv.FormatInt(time.Now().UnixNano(), 10))
+	if err := os.MkdirAll(testRoot, 0755); err != nil {
+		http.Error(w, "failed to create test folder", http.StatusBadRequest)
+		return
+	}
 
-	// Ensure only the selected sample is present in the destination folder.
-	// This keeps each test run isolated (one file per run) even if the user
-	// reuses the same destination path.
+	src := filepath.Join(h.testSamplesPath, srcName)
+	dest := filepath.Join(testRoot, srcName)
+
+	// Ensure only the selected sample is present in the test folder.
 	otherSample := "eicar.com"
 	if srcName == "eicar.com" {
 		otherSample = "hello.txt"
 	}
-	_ = os.Remove(filepath.Join(destDir, otherSample))
+	_ = os.Remove(filepath.Join(testRoot, otherSample))
 
 	data, err := os.ReadFile(src)
 	if err != nil {
-		http.Error(w, "failed to read sample file", http.StatusInternalServerError)
-		return
+		// Recover from missing sample files in persisted volumes by recreating them.
+		if recErr := ensureTestSamples(h.testSamplesPath); recErr != nil {
+			http.Error(w, "failed to read sample file", http.StatusInternalServerError)
+			return
+		}
+		data, err = os.ReadFile(src)
+		if err != nil {
+			http.Error(w, "failed to read sample file", http.StatusInternalServerError)
+			return
+		}
 	}
 	if err := os.WriteFile(dest, data, 0644); err != nil {
 		http.Error(w, "failed to write sample file", http.StatusBadRequest)
@@ -71,7 +104,7 @@ func (h *Handler) startTestScan(w http.ResponseWriter, r *http.Request) {
 
 	// Reuse the normal scan logic for destDir.
 	apiKey, region := h.cfg.Get()
-	scannerType, localURL, localAPIKey := h.cfg.GetScanner()
+	scannerType, localURL, localAPIKey, localProtocol, localTLS := h.cfg.GetScanner()
 	if scannerType == "saas" && (apiKey == "" || region == "") {
 		http.Error(w, "configure API key and region first", http.StatusBadRequest)
 		return
@@ -105,17 +138,30 @@ func (h *Handler) startTestScan(w http.ResponseWriter, r *http.Request) {
 		Concurrency:     concurrency,
 		GenerateHashes:  h.cfg.GetHashEnabled(),
 		PredictiveML:    h.cfg.GetPredictiveML(),
+		ReportMode:      h.cfg.GetReportMode(),
 		ScannerType:     scannerType,
-		LocalScannerURL: localURL,
+		LocalScannerURL: normalizeLocalScannerURL(localURL),
+		LocalScannerProtocol: localProtocol,
+		LocalScannerTLS: localTLS,
 		LocalAPIKey:     localAPIKey,
 	}
-	task := h.store.Create(destDir)
+	if localProtocol == "grpc" {
+		opts.LocalScannerURL = normalizeLocalScannerGRPCAddr(localURL)
+	}
+	task := h.store.Create([]string{testRoot})
+	if task == nil {
+		http.Error(w, "failed to create scan task", http.StatusInternalServerError)
+		return
+	}
 	if rn := strings.TrimSpace(body.ReportName); rn != "" {
 		task.SetReportName(rn)
 	}
-	go h.store.RunScan(task.ID, destDir, apiKey, region, opts)
+	go h.store.RunScan(task.ID, []string{testRoot}, apiKey, region, opts)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"taskId": task.ID})
+	json.NewEncoder(w).Encode(map[string]string{
+		"taskId":   task.ID,
+		"scanPath": testRoot,
+	})
 }
 
