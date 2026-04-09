@@ -3,11 +3,13 @@ package api
 import (
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"v1fs-scanner/internal/config"
 	"v1fs-scanner/internal/scanner"
@@ -40,6 +42,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.URL.Path == "/api/config" && r.Method == http.MethodPost:
 		h.saveConfig(w, r)
+		return
+	case r.URL.Path == "/api/scanner/test" && r.Method == http.MethodPost:
+		h.testScanner(w, r)
 		return
 	case r.URL.Path == "/api/config/scan-action" && r.Method == http.MethodPost:
 		h.saveScanAction(w, r)
@@ -96,6 +101,7 @@ func (h *Handler) serveStatic(name string, w http.ResponseWriter, r *http.Reques
 
 func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 	apiKey, region := h.cfg.Get()
+	scannerType, localURL, _ := h.cfg.GetScanner()
 	action, quarantinePath := h.cfg.GetScanAction()
 	concurrency := h.cfg.GetScanConcurrency()
 	maxScans := h.cfg.GetMaxConcurrentScans()
@@ -106,6 +112,8 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"apiKeySet":          apiKey != "",
 		"region":             region,
 		"configured":         apiKey != "" && region != "",
+		"scannerType":        scannerType,
+		"localScannerUrl":    localURL,
 		"actionOnMalware":    action,
 		"quarantinePath":     quarantinePath,
 		"scanConcurrency":    concurrency,
@@ -117,10 +125,13 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) saveConfig(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		APIKey          string `json:"apiKey"`
-		Region          string `json:"region"`
-		ActionOnMalware string `json:"actionOnMalware"`
-		QuarantinePath  string `json:"quarantinePath"`
+		APIKey             string `json:"apiKey"`
+		Region             string `json:"region"`
+		ScannerType        string `json:"scannerType"`
+		LocalScannerURL    string `json:"localScannerUrl"`
+		LocalScannerAPIKey string `json:"localScannerApiKey"`
+		ActionOnMalware    string `json:"actionOnMalware"`
+		QuarantinePath     string `json:"quarantinePath"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -128,11 +139,23 @@ func (h *Handler) saveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	body.Region = strings.TrimSpace(body.Region)
 	body.APIKey = strings.TrimSpace(body.APIKey)
-	if body.Region == "" || body.APIKey == "" {
-		http.Error(w, "apiKey and region required", http.StatusBadRequest)
-		return
+	body.ScannerType = strings.TrimSpace(strings.ToLower(body.ScannerType))
+	if body.ScannerType == "" {
+		body.ScannerType = "saas"
+	}
+	if body.ScannerType == "local" {
+		if strings.TrimSpace(body.LocalScannerURL) == "" {
+			http.Error(w, "localScannerUrl required for local scanner", http.StatusBadRequest)
+			return
+		}
+	} else {
+		if body.Region == "" || body.APIKey == "" {
+			http.Error(w, "apiKey and region required for saas scanner", http.StatusBadRequest)
+			return
+		}
 	}
 	h.cfg.Set(body.APIKey, body.Region)
+	h.cfg.SetScanner(body.ScannerType, strings.TrimSpace(body.LocalScannerURL), strings.TrimSpace(body.LocalScannerAPIKey))
 	action := strings.TrimSpace(body.ActionOnMalware)
 	if action != "log" && action != "quarantine" && action != "delete" {
 		action = "log"
@@ -144,6 +167,64 @@ func (h *Handler) saveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+}
+
+func (h *Handler) testScanner(w http.ResponseWriter, r *http.Request) {
+	scannerType, localURL, _ := h.cfg.GetScanner()
+	type result struct {
+		OK      bool   `json:"ok"`
+		Message string `json:"message"`
+	}
+	if scannerType == "local" {
+		if localURL == "" {
+			http.Error(w, "local scanner URL is not configured", http.StatusBadRequest)
+			return
+		}
+		u := strings.TrimRight(localURL, "/")
+		client := &http.Client{Timeout: 5 * time.Second}
+		req, _ := http.NewRequest(http.MethodGet, u+"/health", nil)
+		resp, err := client.Do(req)
+		if err != nil {
+			// Try root endpoint as fallback
+			req2, _ := http.NewRequest(http.MethodGet, u, nil)
+			resp2, err2 := client.Do(req2)
+			if err2 != nil {
+				http.Error(w, "local scanner is not reachable: "+err.Error(), http.StatusBadGateway)
+				return
+			}
+			defer resp2.Body.Close()
+			if resp2.StatusCode < 200 || resp2.StatusCode >= 500 {
+				http.Error(w, "local scanner responded unexpectedly", http.StatusBadGateway)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(result{OK: true, Message: "local scanner responded successfully"})
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 500 {
+			http.Error(w, "local scanner health check failed", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result{OK: true, Message: "local scanner is reachable"})
+		return
+	}
+	// SaaS mode: verify configured credentials and region by opening TCP to region endpoint.
+	apiKey, region := h.cfg.Get()
+	if apiKey == "" || region == "" {
+		http.Error(w, "api key and region are required for saas scanner", http.StatusBadRequest)
+		return
+	}
+	host := region + ".xdr.trendmicro.com:443"
+	conn, err := net.DialTimeout("tcp", host, 5*time.Second)
+	if err != nil {
+		http.Error(w, "saas endpoint is not reachable for region "+region, http.StatusBadGateway)
+		return
+	}
+	conn.Close()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result{OK: true, Message: "saas scanner endpoint is reachable"})
 }
 
 func (h *Handler) saveScanAction(w http.ResponseWriter, r *http.Request) {
@@ -242,8 +323,13 @@ func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiKey, region := h.cfg.Get()
-	if apiKey == "" || region == "" {
+	scannerType, localURL, localAPIKey := h.cfg.GetScanner()
+	if scannerType == "saas" && (apiKey == "" || region == "") {
 		http.Error(w, "configure API key and region first", http.StatusBadRequest)
+		return
+	}
+	if scannerType == "local" && localURL == "" {
+		http.Error(w, "configure local scanner URL first", http.StatusBadRequest)
 		return
 	}
 	action, quarantinePath := h.cfg.GetScanAction()
@@ -272,6 +358,9 @@ func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 		Concurrency:     concurrency,
 		GenerateHashes:  h.cfg.GetHashEnabled(),
 		PredictiveML:    h.cfg.GetPredictiveML(),
+		ScannerType:     scannerType,
+		LocalScannerURL: localURL,
+		LocalAPIKey:     localAPIKey,
 	}
 	task := h.store.Create(path)
 	if rn := strings.TrimSpace(body.ReportName); rn != "" {

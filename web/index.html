@@ -91,6 +91,14 @@
           <p class="hint">Configure your Trend Vision One API key and region here. These values are saved and used for all scans. You can change them anytime.</p>
           <p class="hint hint-storage">Config is loaded from saved storage (e.g. Docker volume at /data). It persists across container restarts—so after a redeploy you may still see a previously saved key until you enter and save a new one.</p>
           <form id="form-config">
+            <p class="field-label">Scanner provider</p>
+            <label class="radio-label">
+              <input type="radio" name="scannerType" value="saas" checked> TrendAI SaaS scanner
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="scannerType" value="local"> Local scanner
+            </label>
+            <div id="scanner-saas-wrap">
             <label>
               API Key
               <input type="password" id="input-apikey" placeholder="Enter or update your API key" autocomplete="off">
@@ -111,7 +119,19 @@
                 <option value="me-central-1">me-central-1</option>
               </select>
             </label>
-            <button type="submit" class="btn btn-primary">Save API key & region</button>
+            </div>
+            <div id="scanner-local-wrap" class="hidden">
+              <label>
+                Local scanner URL
+                <input type="text" id="input-local-scanner-url" placeholder="e.g. http://scanner.local:8081">
+              </label>
+              <label>
+                Local scanner API key (optional)
+                <input type="password" id="input-local-scanner-apikey" placeholder="Optional token/key" autocomplete="off">
+              </label>
+            </div>
+            <button type="button" class="btn btn-ghost" id="btn-test-scanner">Test scanner connection</button>
+            <button type="submit" class="btn btn-primary">Save scanner settings</button>
           </form>
         </div>
         <div class="card">

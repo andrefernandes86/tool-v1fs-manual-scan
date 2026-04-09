@@ -9,6 +9,9 @@ import (
 type Config struct {
 	APIKey             string `json:"apiKey,omitempty"`
 	Region             string `json:"region,omitempty"`
+	ScannerType        string `json:"scannerType,omitempty"` // "saas" (default) or "local"
+	LocalScannerURL    string `json:"localScannerUrl,omitempty"`
+	LocalScannerAPIKey string `json:"localScannerApiKey,omitempty"`
 	ActionOnMalware    string `json:"actionOnMalware,omitempty"`    // "log", "quarantine", "delete"
 	QuarantinePath     string `json:"quarantinePath,omitempty"`
 	ScanConcurrency    int    `json:"scanConcurrency,omitempty"`    // 0 = use default (8)
@@ -36,11 +39,32 @@ func (c *Config) Get() (apiKey, region string) {
 	return c.APIKey, c.Region
 }
 
+func (c *Config) GetScanner() (scannerType, localURL, localAPIKey string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	scannerType = c.ScannerType
+	if scannerType == "" {
+		scannerType = "saas"
+	}
+	return scannerType, c.LocalScannerURL, c.LocalScannerAPIKey
+}
+
 func (c *Config) Set(apiKey, region string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.APIKey = apiKey
 	c.Region = region
+}
+
+func (c *Config) SetScanner(scannerType, localURL, localAPIKey string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if scannerType != "local" {
+		scannerType = "saas"
+	}
+	c.ScannerType = scannerType
+	c.LocalScannerURL = localURL
+	c.LocalScannerAPIKey = localAPIKey
 }
 
 func (c *Config) GetScanAction() (action, quarantinePath string) {

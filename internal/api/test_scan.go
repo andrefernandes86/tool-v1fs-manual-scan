@@ -71,8 +71,13 @@ func (h *Handler) startTestScan(w http.ResponseWriter, r *http.Request) {
 
 	// Reuse the normal scan logic for destDir.
 	apiKey, region := h.cfg.Get()
-	if apiKey == "" || region == "" {
+	scannerType, localURL, localAPIKey := h.cfg.GetScanner()
+	if scannerType == "saas" && (apiKey == "" || region == "") {
 		http.Error(w, "configure API key and region first", http.StatusBadRequest)
+		return
+	}
+	if scannerType == "local" && localURL == "" {
+		http.Error(w, "configure local scanner URL first", http.StatusBadRequest)
 		return
 	}
 	action, quarantinePath := h.cfg.GetScanAction()
@@ -100,6 +105,9 @@ func (h *Handler) startTestScan(w http.ResponseWriter, r *http.Request) {
 		Concurrency:     concurrency,
 		GenerateHashes:  h.cfg.GetHashEnabled(),
 		PredictiveML:    h.cfg.GetPredictiveML(),
+		ScannerType:     scannerType,
+		LocalScannerURL: localURL,
+		LocalAPIKey:     localAPIKey,
 	}
 	task := h.store.Create(destDir)
 	if rn := strings.TrimSpace(body.ReportName); rn != "" {

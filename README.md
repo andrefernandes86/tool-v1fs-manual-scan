@@ -4,7 +4,7 @@ Docker-based web app that scans directories for malware using the [Trend Vision 
 
 ## Features
 
-- **Settings**: Configure and persist V1 API key, region, actions on detection (log only, move to quarantine, or delete), maximum simultaneous scans, predictive machine learning, and optional file hash generation.
+- **Settings**: Configure and persist scanner provider (TrendAI SaaS or Local scanner), credentials/endpoint, actions on detection (log only, move to quarantine, or delete), maximum simultaneous scans, predictive machine learning, optional file hash generation, and scanner connectivity tests.
 - **Folder browser**: Browse from root (`/`) and all directories; select a folder to scan (including mounted external drives).
 - **Scan**: Live progress (elapsed time, files scanned, malicious count, current file path); banner listing detected malware; PDF report at the end.
 - **History**: List of past scans with statistics and download links for reports.
@@ -79,15 +79,20 @@ If the container is already running, stop and remove it first: `docker stop v1fs
 
 ## How to use the web interface
 
-### 1. Configure API key and region
+### 1. Configure scanner connection
 
 1. Open **http://localhost:8080** (or your host:port).
 2. In the left navigation, choose **Settings**.
-3. Under **V1 File Security settings**:
-   - Enter your **Trend Vision One API key** (with “Run file scan via SDK” permission).
-   - Choose the **Region** that matches your API key (e.g. `us-east-1`).
-4. Click **Save API key & region**.  
-   You can also set `TM_V1_API_KEY` and `TM_V1_REGION` when starting the container; the UI then uses those until you save new values.
+3. Under **V1 File Security settings**, choose **Scanner provider**:
+   - **TrendAI SaaS scanner**:
+     - Enter your **Trend Vision One API key** (with “Run file scan via SDK” permission).
+     - Choose the **Region** that matches your API key (e.g. `us-east-1`).
+   - **Local scanner**:
+     - Enter **Local scanner URL** (e.g. `http://scanner.local:8081`).
+     - Optionally enter a local scanner API key/token.
+4. Click **Test scanner connection** to verify the selected scanner is reachable.
+5. Click **Save scanner settings**.  
+   You can also set `TM_V1_API_KEY` and `TM_V1_REGION` at startup; these are used for SaaS mode when saved values are empty.
 
 ### 2. Configure actions on detection
 

@@ -224,21 +224,29 @@
 
   document.getElementById('form-config').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const scannerType = (document.querySelector('input[name="scannerType"]:checked') || {}).value || 'saas';
     const apiKey = document.getElementById('input-apikey').value.trim();
     const region = document.getElementById('input-region').value.trim();
-    if (!apiKey || !region) {
-      alert('API key and region are required.');
+    const localScannerUrl = (document.getElementById('input-local-scanner-url') || {}).value ? document.getElementById('input-local-scanner-url').value.trim() : '';
+    const localScannerApiKey = (document.getElementById('input-local-scanner-apikey') || {}).value ? document.getElementById('input-local-scanner-apikey').value.trim() : '';
+    if (scannerType === 'saas') {
+      if (!apiKey || !region) {
+        alert('API key and region are required for SaaS scanner.');
+        return;
+      }
+    } else if (!localScannerUrl) {
+      alert('Local scanner URL is required for local scanner.');
       return;
     }
     try {
       await api('/api/config', {
         method: 'POST',
         json: true,
-        body: JSON.stringify({ apiKey, region })
+        body: JSON.stringify({ apiKey, region, scannerType, localScannerUrl, localScannerApiKey })
       });
       document.getElementById('input-apikey').value = '';
       loadConfig();
-      alert('Settings saved.');
+      alert('Scanner settings saved.');
     } catch (err) {
       alert('Save failed: ' + err.message);
     }
@@ -249,6 +257,12 @@
       const maskedEl = document.getElementById('config-apikey-masked');
       maskedEl.textContent = c.apiKeySet || c.configured ? 'API key is set' : '';
       document.getElementById('input-region').value = c.region || '';
+      const scannerType = c.scannerType === 'local' ? 'local' : 'saas';
+      const modeRadio = document.querySelector('input[name="scannerType"][value="' + scannerType + '"]');
+      if (modeRadio) modeRadio.checked = true;
+      const localUrlEl = document.getElementById('input-local-scanner-url');
+      if (localUrlEl) localUrlEl.value = c.localScannerUrl || '';
+      toggleScannerFields();
       const action = (c.actionOnMalware === 'quarantine' || c.actionOnMalware === 'delete') ? c.actionOnMalware : 'log';
       const radio = document.querySelector('input[name="actionOnMalware"][value="' + action + '"]');
       if (radio) radio.checked = true;
@@ -269,9 +283,32 @@
     if (wrap && q) wrap.classList.toggle('hidden', !q.checked);
   }
 
+  function toggleScannerFields() {
+    const mode = (document.querySelector('input[name="scannerType"]:checked') || {}).value || 'saas';
+    const saasWrap = document.getElementById('scanner-saas-wrap');
+    const localWrap = document.getElementById('scanner-local-wrap');
+    if (saasWrap) saasWrap.classList.toggle('hidden', mode !== 'saas');
+    if (localWrap) localWrap.classList.toggle('hidden', mode !== 'local');
+  }
+
   document.querySelectorAll('input[name="actionOnMalware"]').forEach(function (el) {
     el.addEventListener('change', toggleQuarantinePath);
   });
+  document.querySelectorAll('input[name="scannerType"]').forEach(function (el) {
+    el.addEventListener('change', toggleScannerFields);
+  });
+
+  const btnTestScanner = document.getElementById('btn-test-scanner');
+  if (btnTestScanner) {
+    btnTestScanner.addEventListener('click', async () => {
+      try {
+        const res = await api('/api/scanner/test', { method: 'POST', json: true, body: JSON.stringify({}) });
+        alert(res.message || 'Scanner responded successfully.');
+      } catch (err) {
+        alert('Scanner test failed: ' + err.message);
+      }
+    });
+  }
 
   document.getElementById('form-scan-action').addEventListener('submit', async (e) => {
     e.preventDefault();

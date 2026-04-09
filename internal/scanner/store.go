@@ -1,12 +1,18 @@
 package scanner
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
+	"mime/multipart"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,6 +94,9 @@ type ScanOptions struct {
 	Concurrency     int  // number of files scanned in parallel; 0 = use DefaultConcurrency
 	GenerateHashes  bool // when true, compute SHA-256 for malicious files
 	PredictiveML    bool // when true, enable predictive machine learning (PML) hints
+	ScannerType     string
+	LocalScannerURL string
+	LocalAPIKey     string
 }
 
 func (s *TaskStore) Create(path string) *Task {
@@ -205,13 +214,20 @@ func (s *TaskStore) RunScan(taskID string, rootPath string, apiKey, region strin
 	if t == nil {
 		return
 	}
-
-	client, err := v1client.NewClient(apiKey, region)
-	if err != nil {
-		t.Finish(err)
-		return
+	scannerType := opts.ScannerType
+	if scannerType == "" {
+		scannerType = "saas"
 	}
-	defer client.Destroy()
+	var client *v1client.Client
+	var err error
+	if scannerType == "saas" {
+		client, err = v1client.NewClient(apiKey, region)
+		if err != nil {
+			t.Finish(err)
+			return
+		}
+		defer client.Destroy()
+	}
 
 	var files []string
 	filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
@@ -254,12 +270,20 @@ func (s *TaskStore) RunScan(taskID string, rootPath string, apiKey, region strin
 		go func() {
 			defer wg.Done()
 			for path := range jobs {
-				resp, err := client.ScanFile(path, tags)
+				var fileName, filePath, malwareName string
+				if scannerType == "local" {
+					fileName, filePath, malwareName, err = scanWithLocalScanner(path, opts.LocalScannerURL, opts.LocalAPIKey, tags)
+				} else {
+					var resp string
+					resp, err = client.ScanFile(path, tags)
+					if err == nil {
+						fileName, filePath, malwareName = parseScanResponse(resp, path)
+					}
+				}
 				if err != nil {
 					t.IncrementScanned(path)
 					continue
 				}
-				fileName, filePath, malwareName := parseScanResponse(resp, path)
 				if malwareName != "" {
 					var hash string
 					if opts.GenerateHashes {
@@ -290,6 +314,82 @@ func (s *TaskStore) RunScan(taskID string, rootPath string, apiKey, region strin
 	t.FinishedAt = &now
 	t.mu.Unlock()
 	t.Finish(nil)
+}
+
+func scanWithLocalScanner(filePath, baseURL, apiKey string, tags []string) (fileName, detectedPath, malwareName string, err error) {
+	fh, err := os.Open(filePath)
+	if err != nil {
+		return "", "", "", err
+	}
+	defer fh.Close()
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	part, err := w.CreateFormFile("file", filepath.Base(filePath))
+	if err != nil {
+		return "", "", "", err
+	}
+	if _, err := io.Copy(part, fh); err != nil {
+		return "", "", "", err
+	}
+	for _, tag := range tags {
+		_ = w.WriteField("tags", tag)
+	}
+	if err := w.Close(); err != nil {
+		return "", "", "", err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(baseURL, "/")+"/scan", &buf)
+	if err != nil {
+		return "", "", "", err
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	httpClient := &http.Client{Timeout: 60 * time.Second}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", "", "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", "", "", errors.New("local scanner returned non-2xx response")
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", "", err
+	}
+	// Try SaaS-like response first
+	fileName, detectedPath, malwareName = parseScanResponse(string(data), filePath)
+	if malwareName != "" {
+		return fileName, detectedPath, malwareName, nil
+	}
+
+	// Generic local response fallback
+	var generic struct {
+		FileName    string `json:"fileName"`
+		FilePath    string `json:"filePath"`
+		Malicious   bool   `json:"malicious"`
+		Infected    bool   `json:"infected"`
+		Threat      bool   `json:"threat"`
+		MalwareName string `json:"malwareName"`
+	}
+	if json.Unmarshal(data, &generic) == nil {
+		if generic.Malicious || generic.Infected || generic.Threat {
+			if generic.FileName == "" {
+				generic.FileName = filepath.Base(filePath)
+			}
+			if generic.FilePath == "" {
+				generic.FilePath = filePath
+			}
+			if generic.MalwareName == "" {
+				generic.MalwareName = "Detected"
+			}
+			return generic.FileName, generic.FilePath, generic.MalwareName, nil
+		}
+	}
+	return filepath.Base(filePath), filePath, "", nil
 }
 
 // parseScanResponse returns (fileName, filePath, malwareName). If malware detected, malwareName is non-empty.
