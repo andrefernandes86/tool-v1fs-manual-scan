@@ -43,7 +43,7 @@
     const norm = String(p).replace(/\\/g, '/');
     if (norm === '/' || norm === '//') {
       return window.confirm(
-        'You are including the filesystem root (/). This scans the whole tree visible to the app (on Linux, /proc, /sys, and /dev are skipped). Continue?'
+        'You are including the filesystem root (/). This scans the whole tree visible to the app (on Linux, only top-level /proc, /sys, /dev, and /run are skipped). Continue?'
       );
     }
     if (/^[a-zA-Z]:\/?$/.test(norm)) {

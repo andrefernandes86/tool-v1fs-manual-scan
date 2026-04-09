@@ -148,14 +148,11 @@ func linuxVirtualSkipPath(absPath string) bool {
 	}
 	p := filepath.Clean(absPath)
 	sep := string(filepath.Separator)
+	// Only the real top-level virtual filesystems on Linux (/proc, /sys, /dev, /run).
+	// Do not use strings.Contains(..., "/dev/") etc.: that skips every path under a normal
+	// folder named "dev", "sys", or "run" (e.g. .../project/dev/src), which collapses full-root scans.
 	for _, vp := range []string{"/proc", "/sys", "/dev", "/run"} {
 		if p == vp || strings.HasPrefix(p, vp+sep) {
-			return true
-		}
-	}
-	// Host root bind-mounted under e.g. /mnt/host/sys/...
-	for _, mid := range []string{sep + "proc" + sep, sep + "sys" + sep, sep + "dev" + sep, sep + "run" + sep} {
-		if strings.Contains(p, mid) {
 			return true
 		}
 	}
