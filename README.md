@@ -7,7 +7,7 @@ Docker-based web app that scans directories for malware using the [Trend Vision 
 - **Settings**: Configure and persist scanner provider (TrendAI SaaS or on-prem **gRPC-only** local gateway), credentials/endpoint, optional TLS for gRPC, actions on detection (log only, move to quarantine, or delete), maximum simultaneous scans, predictive machine learning (SaaS only), optional file hash generation, report mode (summary vs all files), and **Test scanner connection** / **Compatibility check**.
 - **Folder browser**: Platform-aware top level (**Locations**) — on Linux a single root (`/`); on macOS **System** (`/`) plus volumes under `/Volumes`; on Windows, available drive letters (`C:\`, `D:\`, …). Navigate with folder rows, **↑ Parent**, and **Locations**. Paths must be absolute (as shown in the UI).
 - **Scan targets**: Build a list of one or more folders to scan in a single job (up to **32** paths). **Add current folder** appends the directory you are viewing; **Use only this folder** replaces the list with that path; **Clear all** empties the list. Scanning filesystem root (`/`) or a drive root asks for confirmation. **Cancel** on the report-name dialog does **not** start a scan.
-- **Scan**: Live progress with **Target(s)** (the paths being scanned), elapsed time, files scanned, malicious count, and current file; banner listing detected malware; PDF report at the end. On Linux, only the **root** virtual trees **`/proc`**, **`/sys`**, **`/dev`**, and **`/run`** are skipped (not arbitrary folders elsewhere named `dev`, `sys`, or `run`). Permission errors on skipped system trees are treated as expected and do not inflate the scan error count.
+- **Scan**: Live progress with **Target(s)** (the paths being scanned), elapsed time, files scanned, malicious count, and current file; banner listing detected malware; PDF report at the end. Each target directory is scanned **recursively** (every regular file under it). On Linux, only the **root** virtual trees **`/proc`**, **`/sys`**, **`/dev`**, and **`/run`** are skipped (not arbitrary folders elsewhere named `dev`, `sys`, or `run`). Permission errors on skipped system trees are treated as expected and do not inflate the scan error count. **Docker:** **`/`** inside the container is only the image filesystem (often a few hundred files), not your host; mount the host (e.g. `-v /:/host:ro`) and scan **`/host`** for a full host tree.
 - **History**: List of past scans with statistics and download links for reports (multi-folder jobs show all paths separated by `; `).
 
 ---
@@ -254,6 +254,22 @@ go build -o v1fs-scanner .
 ```
 
 Static files are served from the `web/` directory (or current directory if `web/` is missing).
+
+---
+
+## FAQ: “I scanned `/` but only ~300 files”
+
+The scan **is** recursive. That file count usually means the app is running **inside Docker**: `/` is the **container’s** root (Alpine + app), not your laptop or server’s disk. Mount the host and scan that mount, for example:
+
+```bash
+docker run -d -p 8080:8080 \
+  -v v1fs-data:/data \
+  -v /:/host:ro \
+  --name v1fs-scanner \
+  v1fs-scanner:latest
+```
+
+Then in the UI open **`/host`** (under **Locations** → **Root** → **host**) and add it as a scan target. The UI also shows a **Running in a container** notice when it detects Docker.
 
 ---
 

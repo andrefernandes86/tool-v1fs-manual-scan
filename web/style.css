@@ -565,6 +565,39 @@ body {
   cursor: not-allowed;
 }
 
+.scanner-banner.info-banner {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  background: rgba(75, 123, 255, 0.12);
+  border: 1px solid rgba(75, 123, 255, 0.35);
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+.scanner-banner.info-banner strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #b8d4ff;
+}
+
+.scanner-banner.info-banner p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.scan-hint-banner {
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  background: rgba(53, 196, 140, 0.08);
+  border: 1px solid rgba(53, 196, 140, 0.3);
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
 .scan-progress .current-file code {
   font-size: 0.85rem;
   word-break: break-all;

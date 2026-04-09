@@ -111,7 +111,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 	predictiveML := h.cfg.GetPredictiveML()
 	reportMode := h.cfg.GetReportMode()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	out := map[string]interface{}{
 		"apiKeySet":          apiKey != "",
 		"region":             region,
 		"configured":         apiKey != "" && region != "",
@@ -126,7 +126,12 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"hashEnabled":        hashEnabled,
 		"predictiveML":       predictiveML,
 		"reportMode":         reportMode,
-	})
+		"runningInContainer": runningInContainer(),
+	}
+	if runningInContainer() {
+		out["containerScanRootHint"] = "Scans are recursive. In Docker, / is only this container (often a few hundred files), not your host. To scan the host, run with e.g. -v /:/host:ro and add /host under Scan targets."
+	}
+	json.NewEncoder(w).Encode(out)
 }
 
 func (h *Handler) saveConfig(w http.ResponseWriter, r *http.Request) {
@@ -474,7 +479,16 @@ func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 	go h.store.RunScan(task.ID, scanRoots, apiKey, region, opts)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"taskId": task.ID})
+	out := map[string]interface{}{"taskId": task.ID}
+	if runningInContainer() {
+		for _, p := range scanRoots {
+			if p == string(filepath.Separator) {
+				out["scanHint"] = "Recursive scan of every file under /. In Docker this is only the container image (often ~300–800 files), not your Mac/PC host. Mount the host (e.g. docker run … -v /:/host:ro …) and scan /host to include the full host tree."
+				break
+			}
+		}
+	}
+	json.NewEncoder(w).Encode(out)
 }
 
 func (h *Handler) scanStatus(w http.ResponseWriter, r *http.Request, id string) {

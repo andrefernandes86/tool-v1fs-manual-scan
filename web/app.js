@@ -7,6 +7,7 @@
   let pollTimer = null;
   let elapsedTimer = null;
   let scanStartedAt = null;
+  let runningInContainer = false;
 
   function showPane(name) {
     document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
@@ -42,9 +43,13 @@
   function confirmScanRootIfNeeded(p) {
     const norm = String(p).replace(/\\/g, '/');
     if (norm === '/' || norm === '//') {
-      return window.confirm(
-        'You are including the filesystem root (/). This scans the whole tree visible to the app (on Linux, only top-level /proc, /sys, /dev, and /run are skipped). Continue?'
-      );
+      let msg =
+        'You are including the filesystem root (/). Scans are recursive (all subfolders). On Linux, only top-level /proc, /sys, /dev, and /run are skipped. Continue?';
+      if (runningInContainer) {
+        msg =
+          'You selected /. Inside Docker, / is only this container image (often a few hundred files), not your Mac or PC host. The scan is still recursive. To scan the host, recreate the container with e.g. -v /:/host:ro and add /host as a target. Continue with / anyway?';
+      }
+      return window.confirm(msg);
     }
     if (/^[a-zA-Z]:\/?$/.test(norm)) {
       return window.confirm('You selected a drive root. This may scan the entire volume. Continue?');
@@ -143,6 +148,11 @@
       lastErr.textContent = '';
       lastErr.classList.add('hidden');
     }
+    const scanHint = document.getElementById('scan-hint-banner');
+    if (scanHint) {
+      scanHint.textContent = '';
+      scanHint.classList.add('hidden');
+    }
     document.getElementById('scan-progress').classList.remove('hidden');
     document.getElementById('malicious-banner').classList.add('hidden');
     const progressEl = document.getElementById('scan-progress');
@@ -151,10 +161,15 @@
     });
   }
 
-  function startScanSession(taskId, targetLabel) {
+  function startScanSession(taskId, targetLabel, scanHint) {
     currentTaskId = taskId;
     prepareProgressUI();
     showScanTargetSummary(targetLabel || '');
+    const hintEl = document.getElementById('scan-hint-banner');
+    if (hintEl && scanHint) {
+      hintEl.textContent = scanHint;
+      hintEl.classList.remove('hidden');
+    }
     startPolling();
   }
 
@@ -291,12 +306,12 @@
     if (reportNameInput === null) return;
     const reportName = reportNameInput.trim();
     try {
-      const { taskId } = await api('/api/scan/start', {
+      const res = await api('/api/scan/start', {
         method: 'POST',
         json: true,
         body: JSON.stringify({ paths: selectedPaths, reportName: reportName })
       });
-      startScanSession(taskId, selectedPaths.join('; '));
+      startScanSession(res.taskId, selectedPaths.join('; '), res.scanHint);
     } catch (e) {
       alert('Failed to start scan: ' + e.message);
     }
@@ -464,8 +479,21 @@
     }
   });
 
+  function applyRuntimeFromConfig(c) {
+    runningInContainer = !!(c && c.runningInContainer);
+    const banner = document.getElementById('scanner-container-hint');
+    if (banner && c && c.containerScanRootHint) {
+      const textEl = banner.querySelector('.scanner-container-hint-text');
+      if (textEl) textEl.textContent = c.containerScanRootHint;
+      banner.classList.toggle('hidden', !runningInContainer);
+    } else if (banner) {
+      banner.classList.add('hidden');
+    }
+  }
+
   function loadConfig() {
     api('/api/config').then(c => {
+      applyRuntimeFromConfig(c);
       const maskedEl = document.getElementById('config-apikey-masked');
       maskedEl.textContent = c.apiKeySet || c.configured ? 'API key is set' : '';
       document.getElementById('input-region').value = c.region || '';

@@ -35,6 +35,10 @@
 
     <main class="panes">
       <section id="pane-scanner" class="pane active">
+        <div id="scanner-container-hint" class="scanner-banner info-banner hidden" role="status">
+          <strong>Running in a container</strong>
+          <p class="scanner-container-hint-text"></p>
+        </div>
         <div class="card scanner-hero">
           <div class="scanner-hero-header">
             <div class="scanner-hero-copy">
@@ -58,7 +62,7 @@
               <div id="scan-targets" class="scan-targets" aria-live="polite">
                 <span class="scan-targets-placeholder">No folders selected. Use checkboxes beside folders or the buttons below.</span>
               </div>
-              <p class="hint folder-hint">Tick checkboxes next to folders to include them in the scan, or use the buttons below. Click the folder name to open it. Then click <strong>Start scan</strong> — nothing runs until you confirm.</p>
+              <p class="hint folder-hint">Tick checkboxes next to folders to include them in the scan, or use the buttons below. Each target is scanned <strong>recursively</strong> (all subfolders). Click the folder name to open it. Then click <strong>Start scan</strong> — nothing runs until you confirm.</p>
               <div class="folder-actions-buttons folder-actions-wrap">
                 <button type="button" id="btn-add-scan-target" class="btn btn-ghost">Add current folder</button>
                 <button type="button" id="btn-use-only-folder" class="btn btn-ghost">Use only this folder</button>
@@ -71,6 +75,7 @@
 
         <div id="scan-progress" class="card scan-progress hidden">
           <h2>Scan in progress</h2>
+          <p id="scan-hint-banner" class="scan-hint-banner hidden" role="status"></p>
           <p id="scan-target-summary" class="scan-target-summary hidden">Target(s): <code id="scan-target-summary-value"></code></p>
           <p class="scan-elapsed">Elapsed: <strong id="scan-elapsed">0:00</strong></p>
           <p class="counter">Files scanned: <strong id="scanned-count">0</strong> / <strong id="total-files">0</strong></p>
