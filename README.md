@@ -12,6 +12,28 @@ Docker-based web app that scans directories for malware using the [Trend Vision 
 
 ---
 
+## Screenshots
+
+### Scanner tab (folder picker & Docker hint)
+
+Browse directories, tick **Scan targets** (each is scanned recursively), and use **Start scan** when ready. When the app runs in Docker, the **Running in a container** banner explains how to mount host folders or drives with `docker run -v` (for example `-v /Users/you:/mnt/data` then scan `/mnt/data`).
+
+![Scanner tab showing Running in a container banner, folder list, and scan targets](docs/screenshots/ui-scanner-docker-hint.png)
+
+### Settings — scanner provider
+
+Choose **TrendAI SaaS** or **on-prem gRPC gateway**, set endpoint and optional TLS, then **Test scanner connection**, **Compatibility check**, and **Save scanner settings**. With `-v v1fs-data:/data`, configuration persists across container restarts.
+
+![Settings — scanner provider and Vision One File Security options](docs/screenshots/ui-settings-scanner.png)
+
+### Settings — actions & test options
+
+Configure **log / quarantine / delete** on detection, hashes, PML (SaaS), concurrency, report mode, and use **Test options** to run EICAR or clean sample scans (samples live under `/data/test-samples`; each test uses an isolated `v1fs-test-…` subfolder under your chosen destination).
+
+![Settings — actions and performance plus EICAR test options](docs/screenshots/ui-settings-actions-test.png)
+
+---
+
 ## Quick start with Docker
 
 ```bash
