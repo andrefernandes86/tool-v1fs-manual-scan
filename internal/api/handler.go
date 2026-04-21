@@ -101,6 +101,13 @@ func (h *Handler) serveStatic(name string, w http.ResponseWriter, r *http.Reques
 	w.Write(data)
 }
 
+func scanTagsJSON(tags []string) []string {
+	if len(tags) == 0 {
+		return []string{}
+	}
+	return tags
+}
+
 func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 	apiKey, region := h.cfg.Get()
 	scannerType, localURL, _, localProtocol, localTLS := h.cfg.GetScanner()
@@ -126,6 +133,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"hashEnabled":        hashEnabled,
 		"predictiveML":       predictiveML,
 		"reportMode":         reportMode,
+		"scanTags":           scanTagsJSON(h.cfg.GetScanTags()),
 		"runningInContainer": runningInContainer(),
 	}
 	if runningInContainer() {
@@ -292,13 +300,14 @@ func (h *Handler) compatScanner(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) saveScanAction(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		ActionOnMalware    string `json:"actionOnMalware"`
-		QuarantinePath     string `json:"quarantinePath"`
-		ScanConcurrency    *int   `json:"scanConcurrency"`
-		MaxConcurrentScans *int   `json:"maxConcurrentScans"`
-		HashEnabled        *bool  `json:"hashEnabled"`
-		PredictiveML       *bool  `json:"predictiveML"`
-		ReportMode         string `json:"reportMode"`
+		ActionOnMalware    string   `json:"actionOnMalware"`
+		QuarantinePath     string   `json:"quarantinePath"`
+		ScanConcurrency    *int     `json:"scanConcurrency"`
+		MaxConcurrentScans *int     `json:"maxConcurrentScans"`
+		HashEnabled        *bool    `json:"hashEnabled"`
+		PredictiveML       *bool    `json:"predictiveML"`
+		ReportMode         string   `json:"reportMode"`
+		ScanTags           []string `json:"scanTags"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -336,6 +345,7 @@ func (h *Handler) saveScanAction(w http.ResponseWriter, r *http.Request) {
 		h.cfg.SetPredictiveML(*body.PredictiveML)
 	}
 	h.cfg.SetReportMode(strings.TrimSpace(strings.ToLower(body.ReportMode)))
+	h.cfg.SetScanTags(scanner.ParseUserScanTags(body.ScanTags))
 	if err := h.cfg.Save(h.configPath); err != nil {
 		http.Error(w, "failed to save config", http.StatusInternalServerError)
 		return
@@ -464,6 +474,7 @@ func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 		LocalScannerProtocol: localProtocol,
 		LocalScannerTLS: localTLS,
 		LocalAPIKey:     localAPIKey,
+		ExtraScanTags:   h.cfg.GetScanTags(),
 	}
 	if localProtocol == "grpc" {
 		opts.LocalScannerURL = normalizeLocalScannerGRPCAddr(localURL)

@@ -4,7 +4,7 @@ Docker-based web app that scans directories for malware using the [Trend Vision 
 
 ## Features
 
-- **Settings**: Configure and persist scanner provider (TrendAI SaaS or on-prem **gRPC-only** local gateway), credentials/endpoint, optional TLS for gRPC, actions on detection (log only, move to quarantine, or delete), maximum simultaneous scans, predictive machine learning (SaaS only), optional file hash generation, report mode (summary vs all files), and **Test scanner connection** / **Compatibility check**.
+- **Settings**: Configure and persist scanner provider (TrendAI SaaS or on-prem **gRPC-only** local gateway), credentials/endpoint, optional TLS for gRPC, actions on detection (log only, move to quarantine, or delete), maximum simultaneous scans, predictive machine learning (SaaS only), optional file hash generation, report mode (summary vs all files), optional **Vision One scan tags** (type a tag and press **Enter** to add chips; each chip can be removed with **×**; up to **32** tags, sent with every file scan for filtering in Vision One; the tag **`v1fs-scanner`** is always added by the app), and **Test scanner connection** / **Compatibility check**.
 - **Folder browser**: Platform-aware top level (**Locations**) — on Linux a single root (`/`); on macOS **System** (`/`) plus volumes under `/Volumes`; on Windows, available drive letters (`C:\`, `D:\`, …). Navigate with folder rows, **↑ Parent**, and **Locations**. Paths must be absolute (as shown in the UI).
 - **Scan targets**: Build a list of one or more folders to scan in a single job (up to **32** paths). **Add current folder** appends the directory you are viewing; **Use only this folder** replaces the list with that path; **Clear all** empties the list. Scanning filesystem root (`/`) or a drive root asks for confirmation. **Cancel** on the report-name dialog does **not** start a scan.
 - **Scan**: Live progress with **Target(s)** (the paths being scanned), elapsed time, files scanned, malicious count, and current file; banner listing detected malware; PDF report at the end. Each target directory is scanned **recursively** (every regular file under it). On Linux, only the **root** virtual trees **`/proc`**, **`/sys`**, **`/dev`**, and **`/run`** are skipped (not arbitrary folders elsewhere named `dev`, `sys`, or `run`). Permission errors on skipped system trees are treated as expected and do not inflate the scan error count. **Docker:** **`/`** inside the container is only the image (often a few hundred files). The UI shows a **Running in a container** notice with examples: mount the host (`-v /:/host:ro` → scan **`/host`** on Linux), your **macOS home** (`-v /Users/you:/mnt/data` → scan **`/mnt/data`**), or a USB/drive (`-v /mnt/usb:/mnt/usb` → scan **`/mnt/usb`**). See **FAQ** and **Quick start** below.
@@ -14,23 +14,41 @@ Docker-based web app that scans directories for malware using the [Trend Vision 
 
 ## Screenshots
 
-### Scanner tab (folder picker & Docker hint)
+### Scanner tab — browse inside the container
 
-Browse directories, tick **Scan targets** (each is scanned recursively), and use **Start scan** when ready. When the app runs in Docker, the **Running in a container** banner explains how to mount host folders or drives with `docker run -v` (for example `-v /Users/you:/mnt/data` then scan `/mnt/data`).
+Browse folders from the current path, tick **Scan targets** (each is scanned recursively), and use **Start scan** when ready. When the app runs in Docker, the **Running in a container** banner explains how to mount host folders or drives with `docker run -v` (for example `-v /Users/you:/mnt/data` then scan `/mnt/data`).
 
-![Scanner tab showing Running in a container banner, folder list, and scan targets](docs/screenshots/ui-scanner-docker-hint.png)
+![Scanner tab with Docker hint, folder list under root, and scan targets](docs/screenshots/ui-scanner-docker-hint.png)
+
+### Scanner tab — Locations (top level)
+
+**Locations** shows platform-aware roots: on Linux in Docker you may see a single **Root** entry; on macOS you get **System** plus volumes; on Windows, drive letters. Open a row to descend; use **↑ Parent** to go up.
+
+![Scanner tab with Locations and Root entry](docs/screenshots/ui-scanner-locations-root.png)
 
 ### Settings — scanner provider
 
 Choose **TrendAI SaaS** or **on-prem gRPC gateway**, set endpoint and optional TLS, then **Test scanner connection**, **Compatibility check**, and **Save scanner settings**. With `-v v1fs-data:/data`, configuration persists across container restarts.
 
-![Settings — scanner provider and Vision One File Security options](docs/screenshots/ui-settings-scanner.png)
+![Settings — scanner provider and on-prem gRPC gateway](docs/screenshots/ui-settings-scanner.png)
 
-### Settings — actions & test options
+### Settings — actions & performance
 
-Configure **log / quarantine / delete** on detection, hashes, PML (SaaS), concurrency, report mode, and use **Test options** to run EICAR or clean sample scans (samples live under `/data/test-samples`; each test uses an isolated `v1fs-test-…` subfolder under your chosen destination).
+Configure **log / quarantine / delete** on detection, hashes, PML (SaaS), concurrency, report mode, and optional **Vision One scan tags** as chips (**Enter** to add, **×** to remove). Click **Save actions** to persist.
 
-![Settings — actions and performance plus EICAR test options](docs/screenshots/ui-settings-actions-test.png)
+![Settings — actions, performance, and scan tag chips](docs/screenshots/ui-settings-actions-performance.png)
+
+### Settings — test options
+
+Run **Submit EICAR test file** or **Submit clean test file** to copy built-in samples from `/data/test-samples` into a new `v1fs-test-…` folder under the destination you enter, then scan only that folder.
+
+![Settings — test options for EICAR and clean samples](docs/screenshots/ui-settings-test-options.png)
+
+### Scan in progress — detection example
+
+Live progress shows targets, counts, and current file. When malware is found, paths appear under **Malicious files detected**; when the job finishes, use **Download PDF report**.
+
+![Scan in progress with EICAR detection and scan details](docs/screenshots/ui-scan-progress-malicious.png)
 
 ---
 
@@ -155,6 +173,7 @@ In **Settings**, under **Actions on detection**:
 - **Enable predictive machine learning (PML)** — When enabled for the **SaaS** scanner, the app sends PML/feedback hints as described in the vendor documentation. **Local gRPC** scans do not send these hints (gateway compatibility).
 - **Maximum simultaneous scans** — How many scan jobs can run at the same time. Set `0` for unlimited (up to a maximum of 1000). Lower values can protect system resources and API quota when multiple scans are triggered.
 - **Report generation mode** — **Statistics only** (default) keeps the PDF smaller; **All files** lists every clean file as well as malicious ones (can be very large for big scans). Save under **Actions & performance** with **Save actions**.
+- **Vision One scan tags (optional)** — Add labels that Vision One can use to filter activity. Type one tag in the field, press **Enter** to add it as a chip; click **×** on a chip to remove it. Up to **32** tags, 128 characters each; duplicates and control characters are rejected. The app always adds **`v1fs-scanner`** on the server side in addition to your tags (and any PML-related tags in SaaS mode).
 
 Click **Save actions** after changing.
 
@@ -169,7 +188,7 @@ Click **Save actions** after changing.
    - Including **`/`** (Linux root) or a **Windows drive root** (`C:\`, etc.) triggers a confirmation dialog because the scope is very large.
    - **Docker:** **`/`** is the container root only (often far fewer files than the host). Recreate `docker run` with **`-v host:container`**, then add the **container** path here: **macOS home** — `-v /Users/you:/mnt/data` → **`/mnt/data`**; **Linux host** — `-v /:/host:ro` → **`/host`**; **USB** — `-v /mnt/usb:/mnt/usb` → **`/mnt/usb`** (or map to another name, e.g. `/mnt/external-drive`). The Scanner tab also shows a **Running in a container** help banner when applicable.
 4. Click **Start scan**. A dialog asks for an optional **report name** (for the PDF and **History**). **OK** starts the job; **Cancel** closes the dialog and **does not** start a scan.
-5. Under **Scan in progress**, **Target(s)** shows the path or paths being scanned (semicolon-separated if you chose several). You also see **Elapsed**, **Files scanned**, **Malicious found**, **Scan errors**, and the file currently being scanned. When finished, use **Download PDF report** and review the **Malicious files detected** banner if anything was found.
+5. Under **Scan in progress**, **Target(s)** shows the path or paths being scanned (semicolon-separated if you chose several). You also see **Elapsed**, **Files scanned**, **Malicious found**, **Scan errors**, and the file currently being scanned. When finished, use **Download PDF report** and review the **Malicious files detected** banner if anything was found (an example is shown under **Screenshots** → **Scan in progress — detection example**).
 
 **Multiple folders in one job** — Add several paths (e.g. `/data/project-a` and `/data/project-b`) before **Start scan**. The backend merges file lists (no duplicate paths), produces one PDF, and one history entry with all targets in the path field.
 
@@ -259,7 +278,7 @@ docker run -d -p 8080:8080 \
 
 ### What is preserved
 
-- Config (API key, region, actions, quarantine path, scan concurrency) and PDF reports in the **Docker volume** (`v1fs-data`). They persist as long as you keep the volume and pass it to the new container with `-v v1fs-data:/data`.
+- Config (API key, region, actions, quarantine path, scan concurrency, scan tags, report mode, and related settings) and PDF reports in the **Docker volume** (`v1fs-data`). They persist as long as you keep the volume and pass it to the new container with `-v v1fs-data:/data`.
 
 ---
 

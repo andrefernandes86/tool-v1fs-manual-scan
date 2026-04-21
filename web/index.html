@@ -206,6 +206,12 @@
                   <option value="all">All files (malicious first, then clean files)</option>
                 </select>
               </label>
+              <div class="scan-tags-field">
+                <p class="field-label scan-tags-field-label">Vision One scan tags (optional)</p>
+                <div id="scan-tags-chips" class="scan-tags-chips" aria-label="Saved scan tags"></div>
+                <input type="text" id="input-scan-tag-entry" class="scan-tag-entry" placeholder="Type a tag, press Enter" maxlength="128" autocomplete="off" spellcheck="false" aria-label="Add scan tag">
+                <p class="hint">Press <strong>Enter</strong> to add each tag. They appear as chips; use <strong>×</strong> on a chip to remove it. Sent with every file scan for Vision One filtering. <code>v1fs-scanner</code> is always added by the app. Max 32 tags.</p>
+              </div>
               <p class="hint">Control how many scan jobs can run at once (0 = unlimited). Reducing this can protect API quota and system load when multiple users start scans.</p>
             </div>
             <div class="scan-action-footer">

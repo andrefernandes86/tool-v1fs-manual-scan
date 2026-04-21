@@ -144,6 +144,7 @@ func (h *Handler) startTestScan(w http.ResponseWriter, r *http.Request) {
 		LocalScannerProtocol: localProtocol,
 		LocalScannerTLS: localTLS,
 		LocalAPIKey:     localAPIKey,
+		ExtraScanTags:   h.cfg.GetScanTags(),
 	}
 	if localProtocol == "grpc" {
 		opts.LocalScannerURL = normalizeLocalScannerGRPCAddr(localURL)

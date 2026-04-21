@@ -8,6 +8,8 @@
   let elapsedTimer = null;
   let scanStartedAt = null;
   let runningInContainer = false;
+  const MAX_SCAN_TAGS_UI = 32;
+  let scanTagChips = [];
 
   function showPane(name) {
     document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
@@ -491,6 +493,79 @@
     }
   }
 
+  function scanTagsForSave() {
+    return scanTagChips.slice();
+  }
+
+  function renderScanTagChips() {
+    const wrap = document.getElementById('scan-tags-chips');
+    const entry = document.getElementById('input-scan-tag-entry');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    scanTagChips.forEach(function (tag, index) {
+      const chip = document.createElement('span');
+      chip.className = 'scan-tag-chip';
+      chip.setAttribute('data-index', String(index));
+      const lab = document.createElement('span');
+      lab.className = 'scan-tag-chip-label';
+      lab.textContent = tag;
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'scan-tag-chip-remove';
+      rm.setAttribute('aria-label', 'Remove tag ' + tag);
+      rm.textContent = '\u00D7';
+      rm.addEventListener('click', function () {
+        scanTagChips.splice(index, 1);
+        renderScanTagChips();
+      });
+      chip.appendChild(lab);
+      chip.appendChild(rm);
+      wrap.appendChild(chip);
+    });
+    if (entry) {
+      entry.disabled = scanTagChips.length >= MAX_SCAN_TAGS_UI;
+      entry.placeholder =
+        scanTagChips.length >= MAX_SCAN_TAGS_UI ? 'Maximum tags reached' : 'Type a tag, press Enter';
+    }
+  }
+
+  function tryAddScanTagFromInput() {
+    const entry = document.getElementById('input-scan-tag-entry');
+    if (!entry || entry.disabled) return;
+    let t = entry.value.trim();
+    if (!t) return;
+    if (t.length > 128) t = t.slice(0, 128);
+    if (/[\u0000-\u001F\u007F]/.test(t)) {
+      alert('Tags cannot contain control characters.');
+      return;
+    }
+    if (scanTagChips.indexOf(t) >= 0) {
+      entry.value = '';
+      return;
+    }
+    if (scanTagChips.length >= MAX_SCAN_TAGS_UI) return;
+    scanTagChips.push(t);
+    entry.value = '';
+    renderScanTagChips();
+  }
+
+  function wireScanTagEntry() {
+    const entry = document.getElementById('input-scan-tag-entry');
+    if (!entry || entry.dataset.wired) return;
+    entry.dataset.wired = '1';
+    entry.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        tryAddScanTagFromInput();
+        return;
+      }
+      if (e.key === 'Backspace' && !entry.value && scanTagChips.length > 0) {
+        scanTagChips.pop();
+        renderScanTagChips();
+      }
+    });
+  }
+
   function loadConfig() {
     api('/api/config').then(c => {
       applyRuntimeFromConfig(c);
@@ -517,6 +592,9 @@
       if (maxScansEl) maxScansEl.value = (typeof c.maxConcurrentScans === 'number' && c.maxConcurrentScans > 0) ? String(c.maxConcurrentScans) : '';
       const reportModeEl = document.getElementById('input-report-mode');
       if (reportModeEl) reportModeEl.value = c.reportMode === 'all' ? 'all' : 'stats';
+      scanTagChips = Array.isArray(c.scanTags) ? c.scanTags.slice() : [];
+      renderScanTagChips();
+      wireScanTagEntry();
       toggleQuarantinePath();
     });
   }
@@ -598,7 +676,8 @@
           maxConcurrentScans: maxConcurrentScans,
           hashEnabled: hashEnabled,
           predictiveML: predictiveML,
-          reportMode: reportMode
+          reportMode: reportMode,
+          scanTags: scanTagsForSave()
         })
       });
       alert('Actions saved.');
@@ -607,6 +686,8 @@
     }
   });
 
+  renderScanTagChips();
+  wireScanTagEntry();
   loadConfig();
   renderScanTargets();
   updateSelectButton();

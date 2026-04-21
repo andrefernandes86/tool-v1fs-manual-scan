@@ -522,6 +522,84 @@ body {
   margin-top: 0.5rem;
 }
 
+.scan-tags-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.scan-tags-field-label {
+  margin-bottom: 0.35rem;
+}
+
+.scan-tags-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0.35rem 0;
+  align-items: center;
+}
+
+.scan-tags-chips:empty {
+  min-height: 0;
+  padding: 0;
+}
+
+.scan-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.35rem 0.25rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(75, 123, 255, 0.18);
+  border: 1px solid rgba(75, 123, 255, 0.45);
+  font-size: 0.88rem;
+  color: #dbe7ff;
+  max-width: 100%;
+}
+
+.scan-tag-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 14rem;
+}
+
+.scan-tag-chip-remove {
+  flex-shrink: 0;
+  width: 1.65rem;
+  height: 1.65rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(8, 13, 23, 0.45);
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scan-tag-chip-remove:hover {
+  color: #ff8a98;
+  background: rgba(255, 95, 115, 0.15);
+}
+
+.scan-tag-entry {
+  width: 100%;
+  max-width: 28rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid rgba(90, 126, 191, 0.45);
+  background: rgba(8, 13, 23, 0.65);
+  color: var(--text);
+  font: inherit;
+}
+
 .field-label {
   margin: 0 0 0.25rem;
   font-size: 0.9rem;

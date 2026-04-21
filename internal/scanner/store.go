@@ -117,6 +117,7 @@ type ScanOptions struct {
 	LocalScannerProtocol string // ignored for local scans (always gRPC); retained for API shape
 	LocalScannerTLS bool
 	LocalAPIKey     string
+	ExtraScanTags   []string // optional user tags (Vision One); v1fs-scanner is always prepended in RunScan
 }
 
 func (s *TaskStore) Create(rootPaths []string) *Task {
@@ -450,6 +451,12 @@ func (s *TaskStore) RunScan(taskID string, rootPaths []string, apiKey, region st
 	t.SetReportMode(opts.ReportMode)
 
 	tags := []string{"v1fs-scanner"}
+	for _, ut := range ParseUserScanTags(opts.ExtraScanTags) {
+		if ut == "v1fs-scanner" {
+			continue
+		}
+		tags = append(tags, ut)
+	}
 	if opts.PredictiveML && !(scannerType == "local" && localProtocol == "grpc") {
 		// Align with vendor docs: enable PML and feedback flags.
 		tags = append(tags, "pml:true", "feedback:true")

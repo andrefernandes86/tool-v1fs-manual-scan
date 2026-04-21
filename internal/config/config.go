@@ -22,6 +22,7 @@ type Config struct {
 	HashEnabled        bool   `json:"hashEnabled,omitempty"`        // generate hashes for malicious files in reports
 	PredictiveML       bool   `json:"predictiveML,omitempty"`       // enable predictive machine learning (PML)
 	ReportMode         string `json:"reportMode,omitempty"`         // "stats" or "all"
+	ScanTags           []string `json:"scanTags,omitempty"`         // optional extra SDK tags for Vision One
 	mu                 sync.RWMutex
 }
 
@@ -136,6 +137,21 @@ func (c *Config) GetReportMode() string {
 		return "all"
 	}
 	return "stats"
+}
+
+func (c *Config) GetScanTags() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if len(c.ScanTags) == 0 {
+		return nil
+	}
+	return append([]string(nil), c.ScanTags...)
+}
+
+func (c *Config) SetScanTags(tags []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ScanTags = tags
 }
 
 func (c *Config) SetScanAction(action, quarantinePath string) {
