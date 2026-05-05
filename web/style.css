@@ -154,6 +154,66 @@ body {
   color: var(--text-muted);
 }
 
+.header-chip-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem !important;
+  font-size: 0.75rem;
+}
+
+.status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background-color 0.3s ease;
+}
+
+.status-text {
+  font-weight: 500;
+  transition: color 0.3s ease;
+}
+
+.header-chip-checking {
+  color: var(--text-muted);
+  border-color: rgba(159, 176, 204, 0.3);
+}
+
+.header-chip-checking .status-dot {
+  background-color: #999;
+  animation: pulse 1.5s infinite;
+}
+
+.header-chip-available {
+  color: #35c48c;
+  border-color: rgba(53, 196, 140, 0.3);
+  background: rgba(53, 196, 140, 0.08);
+}
+
+.header-chip-available .status-dot {
+  background-color: #35c48c;
+}
+
+.header-chip-unavailable {
+  color: #ff5f73;
+  border-color: rgba(255, 95, 115, 0.3);
+  background: rgba(255, 95, 115, 0.08);
+}
+
+.header-chip-unavailable .status-dot {
+  background-color: #ff5f73;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
 .tabs {
   display: flex;
   gap: 0.25rem;
@@ -666,6 +726,81 @@ body {
   white-space: pre-line;
 }
 
+.collapsible-banner {
+  margin: 0 0 1rem;
+  border-radius: var(--radius);
+  background: rgba(75, 123, 255, 0.12);
+  border: 1px solid rgba(75, 123, 255, 0.35);
+  font-size: 0.92rem;
+  color: var(--text);
+  overflow: hidden;
+}
+
+.collapsible-banner-toggle {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.85rem 1rem;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.2s ease;
+}
+
+.collapsible-banner-toggle:hover {
+  background: rgba(75, 123, 255, 0.08);
+}
+
+.collapsible-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  margin-right: 0.5rem;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+  color: #b8d4ff;
+}
+
+.collapsible-banner-toggle[aria-expanded="true"] .collapsible-toggle-icon {
+  transform: rotate(90deg);
+}
+
+.collapsible-banner-title {
+  color: #b8d4ff;
+  font-weight: 500;
+}
+
+.collapsible-banner-content {
+  padding: 0 1rem 0.85rem 2.7rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  animation: slideDown 0.25s ease;
+}
+
+.collapsible-banner-content.hidden {
+  display: none;
+}
+
+.collapsible-banner-content p {
+  margin: 0;
+  white-space: pre-line;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .scan-hint-banner {
   margin: 0 0 0.75rem;
   padding: 0.65rem 0.85rem;
@@ -970,4 +1105,109 @@ body {
   border-radius: var(--radius);
   color: var(--text);
   font: inherit;
+}
+
+/* Tabbed Interface */
+.tabs-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.tabs-nav {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 2px solid var(--surface2);
+  padding-bottom: 0;
+}
+
+.tab-button {
+  padding: 0.75rem 1.25rem;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s ease;
+}
+
+.tab-button:hover {
+  color: var(--text);
+  background: var(--surface);
+  border-radius: 8px 8px 0 0;
+}
+
+.tab-button-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.tab-content {
+  display: none;
+  animation: fadeIn 0.2s ease;
+}
+
+.tab-content-active {
+  display: block;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.tab-card {
+  background: var(--surface);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.tab-card .field-label {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+.tab-card > .hint {
+  margin-bottom: 1rem;
+  opacity: 0.9;
+}
+
+.action-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.hint-small {
+  font-size: 0.85rem;
+}
+
+.checkbox-label {
+  display: block;
+  margin-bottom: 0.75rem;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  margin-right: 0.5rem;
+  accent-color: var(--accent);
+}
+
+.scan-action-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--surface2);
 }

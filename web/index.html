@@ -25,19 +25,26 @@
       <header class="header">
         <div class="header-product">
           <h1>Vision One File Security</h1>
-          <p class="subtitle">Lead the Future of AI. AI Fearlessly.</p>
         </div>
         <div class="header-meta">
           <span class="header-chip">TrendAI Vision One</span>
-          <span class="header-chip header-chip-muted">Proactive security</span>
+          <span id="scanner-status-chip" class="header-chip header-chip-status header-chip-checking">
+            <span class="status-dot"></span>
+            <span class="status-text">Checking...</span>
+          </span>
         </div>
       </header>
 
     <main class="panes">
       <section id="pane-scanner" class="pane active">
-        <div id="scanner-container-hint" class="scanner-banner info-banner hidden" role="status">
-          <strong>Running in a container</strong>
-          <p class="scanner-container-hint-text"></p>
+        <div id="scanner-container-hint" class="collapsible-banner hidden" role="status">
+          <button type="button" class="collapsible-banner-toggle" aria-expanded="false" aria-controls="scanner-container-content">
+            <span class="collapsible-toggle-icon">▶</span>
+            <span class="collapsible-banner-title">Running in a container</span>
+          </button>
+          <div id="scanner-container-content" class="collapsible-banner-content hidden">
+            <p class="scanner-container-hint-text"></p>
+          </div>
         </div>
         <div class="card scanner-hero">
           <div class="scanner-hero-header">
@@ -62,7 +69,7 @@
               <div id="scan-targets" class="scan-targets" aria-live="polite">
                 <span class="scan-targets-placeholder">No folders selected. Use checkboxes beside folders or the buttons below.</span>
               </div>
-              <p class="hint folder-hint">Tick checkboxes next to folders to include them in the scan, or use the buttons below. Each target is scanned <strong>recursively</strong> (all subfolders). Click the folder name to open it. Then click <strong>Start scan</strong> — nothing runs until you confirm.</p>
+              <p class="hint folder-hint"><strong>How to scan:</strong> Select folders using the checkboxes on the left, then click <strong>Start scan</strong>. Each folder is scanned recursively, including all subfolders. Click on any folder name to navigate into it and see its contents. You must confirm the scan in the dialog that appears—nothing runs until you do.</p>
               <div class="folder-actions-buttons folder-actions-wrap">
                 <button type="button" id="btn-add-scan-target" class="btn btn-ghost">Add current folder</button>
                 <button type="button" id="btn-use-only-folder" class="btn btn-ghost">Use only this folder</button>
@@ -115,7 +122,7 @@
                 <label class="provider-card">
                   <input type="radio" name="scannerType" value="local">
                   <span class="provider-title">TrendAI Vision One File Security - Local Scanner</span>
-                  <span class="provider-subtitle">On-prem gRPC gateway or HTTP scanner API.</span>
+                  <span class="provider-subtitle">On-prem gRPC gateway.</span>
                 </label>
               </div>
             </div>
@@ -142,16 +149,13 @@
             </label>
             </div>
             <div id="scanner-local-wrap" class="hidden settings-block local-config-block">
-              <p class="field-label">On-prem gRPC gateway</p>
-              <p class="hint">Connects over gRPC to the Vision One File Security gateway (not HTTP/REST).</p>
-              <label id="local-tls-wrap" class="checkbox-label">
-                <input type="checkbox" id="input-local-scanner-tls"> Use TLS for gRPC (grpcs / encrypted channel)
-              </label>
+              <p class="field-label">On-prem scanner gateway</p>
+              <p class="hint">Connects to the Vision One File Security gateway.</p>
               <label>
                 Local scanner endpoint
                 <input type="text" id="input-local-scanner-url" placeholder="host:port" autocomplete="off">
               </label>
-              <p id="local-endpoint-hint" class="hint local-endpoint-hint">gRPC host:port. Enable TLS for encrypted gateways; <code>grpcs://</code> or <code>https://</code> in the field also turns TLS on.</p>
+              <p id="local-endpoint-hint" class="hint local-endpoint-hint">Enter scanner host and port (e.g., 192.168.200.70:31052)</p>
               <label>
                 Local scanner API key (optional)
                 <input type="password" id="input-local-scanner-apikey" placeholder="Optional token/key" autocomplete="off">
@@ -159,7 +163,7 @@
             </div>
             <div class="config-action-row">
               <button type="button" class="btn btn-ghost" id="btn-test-scanner">Test scanner connection</button>
-              <button type="button" class="btn btn-ghost" id="btn-compat-scanner">Compatibility check</button>
+              <button type="button" class="btn btn-ghost" id="btn-compat-scanner">Test malware detection</button>
               <button type="submit" class="btn btn-primary">Save scanner settings</button>
             </div>
           </form>
@@ -167,57 +171,75 @@
         <div class="card">
           <h2>Actions & performance</h2>
           <p class="hint">Choose what to do when a malicious file is found and how aggressive scans should be.</p>
-          <form id="form-scan-action" class="scan-action-grid">
-            <div class="scan-action-column">
-              <p class="field-label">When malware is detected</p>
-              <label class="radio-label">
-                <input type="radio" name="actionOnMalware" value="log" checked> Log only — record in report and banner, keep file
-              </label>
-              <label class="radio-label">
-                <input type="radio" name="actionOnMalware" value="quarantine"> Move to quarantine folder
-              </label>
-              <div id="quarantine-path-wrap" class="quarantine-path-wrap hidden">
-                <label>
-                  Quarantine folder path
-                  <input type="text" id="input-quarantine-path" placeholder="e.g. /data/quarantine">
-                </label>
-                <p class="hint">Use the Scanner tab to browse to a folder, then paste or type the path here (e.g. /data/quarantine).</p>
+          <div class="tabs-container">
+            <div class="tabs-nav">
+              <button type="button" class="tab-button tab-button-active" data-tab="actions-tab">When Malware is Detected</button>
+              <button type="button" class="tab-button" data-tab="performance-tab">Advanced Options</button>
+              <button type="button" class="tab-button" data-tab="tags-tab">Scan Tags</button>
+            </div>
+            <form id="form-scan-action">
+              <div id="actions-tab" class="tab-content tab-content-active">
+                <div class="tab-card">
+                  <p class="field-label">Choose an action</p>
+                  <div class="action-options">
+                    <label class="radio-label">
+                      <input type="radio" name="actionOnMalware" value="log" checked> Log only — record in report and banner, keep file
+                    </label>
+                    <label class="radio-label">
+                      <input type="radio" name="actionOnMalware" value="quarantine"> Move to quarantine folder
+                    </label>
+                    <div id="quarantine-path-wrap" class="quarantine-path-wrap hidden">
+                      <label>
+                        Quarantine folder path
+                        <input type="text" id="input-quarantine-path" placeholder="e.g. /data/quarantine">
+                      </label>
+                    </div>
+                    <label class="radio-label">
+                      <input type="radio" name="actionOnMalware" value="delete"> Delete malicious file
+                    </label>
+                  </div>
+                </div>
               </div>
-              <label class="radio-label">
-                <input type="radio" name="actionOnMalware" value="delete"> Delete malicious file
-              </label>
-            </div>
-            <div class="scan-action-column">
-              <p class="field-label">Advanced options</p>
-              <label class="checkbox-label">
-                <input type="checkbox" id="input-hash-enabled"> Generate SHA-256 hashes for malicious files (slower scans)
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" id="input-predictive-ml"> Enable predictive machine learning (PML)
-              </label>
-              <label>
-                Maximum simultaneous scans
-                <input type="number" id="input-max-concurrent-scans" min="0" max="1000" placeholder="0 = unlimited" title="Maximum number of scans that can run at the same time (0 = unlimited).">
-              </label>
-              <label>
-                Report generation mode
-                <select id="input-report-mode">
-                  <option value="stats">Statistics only (summary + malicious list)</option>
-                  <option value="all">All files (malicious first, then clean files)</option>
-                </select>
-              </label>
-              <div class="scan-tags-field">
-                <p class="field-label scan-tags-field-label">Vision One scan tags (optional)</p>
-                <div id="scan-tags-chips" class="scan-tags-chips" aria-label="Saved scan tags"></div>
-                <input type="text" id="input-scan-tag-entry" class="scan-tag-entry" placeholder="Type a tag, press Enter" maxlength="128" autocomplete="off" spellcheck="false" aria-label="Add scan tag">
-                <p class="hint">Press <strong>Enter</strong> to add each tag. They appear as chips; use <strong>×</strong> on a chip to remove it. Sent with every file scan for Vision One filtering. <code>v1fs-scanner</code> is always added by the app. Max 32 tags.</p>
+              <div id="performance-tab" class="tab-content">
+                <div class="tab-card">
+                  <p class="field-label">Scan optimization</p>
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="input-hash-enabled"> Generate SHA-256 hashes for malicious files (slower scans)
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="input-predictive-ml"> Enable predictive machine learning (PML)
+                  </label>
+                </div>
+                <div class="tab-card">
+                  <p class="field-label">Concurrency & reporting</p>
+                  <label>
+                    Maximum simultaneous scans
+                    <input type="number" id="input-max-concurrent-scans" min="0" max="10000" placeholder="0 = unlimited" title="Maximum number of scans that can run at the same time (0 = unlimited).">
+                  </label>
+                  <p class="hint">Control how many scan jobs can run at once (0 = unlimited).</p>
+                  <label>
+                    Report generation mode
+                    <select id="input-report-mode">
+                      <option value="stats">Statistics only (summary + malicious list)</option>
+                      <option value="all">All files (malicious first, then clean files)</option>
+                    </select>
+                  </label>
+                </div>
               </div>
-              <p class="hint">Control how many scan jobs can run at once (0 = unlimited). Reducing this can protect API quota and system load when multiple users start scans.</p>
-            </div>
-            <div class="scan-action-footer">
-              <button type="submit" class="btn btn-primary">Save actions</button>
-            </div>
-          </form>
+              <div id="tags-tab" class="tab-content">
+                <div class="tab-card">
+                  <p class="field-label">Vision One scan tags</p>
+                  <p class="hint">Optional tags sent with every file scan for Vision One filtering.</p>
+                  <div id="scan-tags-chips" class="scan-tags-chips" aria-label="Saved scan tags"></div>
+                  <input type="text" id="input-scan-tag-entry" class="scan-tag-entry" placeholder="Type a tag, press Enter" maxlength="128" autocomplete="off" spellcheck="false" aria-label="Add scan tag">
+                  <p class="hint hint-small">Press Enter to add tags. Use × on a chip to remove. <code>v1fs-scanner</code> is always added by the app. Max 32 tags.</p>
+                </div>
+              </div>
+              <div class="scan-action-footer">
+                <button type="submit" class="btn btn-primary">Save all settings</button>
+              </div>
+            </form>
+          </div>
         </div>
         <div class="card">
           <h2>Test options</h2>

@@ -54,6 +54,7 @@ type Task struct {
 	LastScanError string      `json:"lastScanError,omitempty"`
 	Error        string       `json:"error,omitempty"`
 	ReportPath   string       `json:"reportPath,omitempty"`
+	ScanTags     []string     `json:"scanTags,omitempty"`
 	mu           sync.RWMutex
 	done         chan struct{}
 }
@@ -363,12 +364,19 @@ func (t *Task) SetReportMode(mode string) {
 	t.ReportMode = "stats"
 }
 
+func (t *Task) SetScanTags(tags []string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.ScanTags = append([]string(nil), tags...)
+}
+
 func (t *Task) Snapshot() Task {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	snap := *t
 	snap.Malicious = append([]Malicious(nil), t.Malicious...)
 	snap.CleanFiles = append([]string(nil), t.CleanFiles...)
+	snap.ScanTags = append([]string(nil), t.ScanTags...)
 	return snap
 }
 
@@ -451,12 +459,14 @@ func (s *TaskStore) RunScan(taskID string, rootPaths []string, apiKey, region st
 	t.SetReportMode(opts.ReportMode)
 
 	tags := []string{"v1fs-scanner"}
-	for _, ut := range ParseUserScanTags(opts.ExtraScanTags) {
+	userTags := ParseUserScanTags(opts.ExtraScanTags)
+	for _, ut := range userTags {
 		if ut == "v1fs-scanner" {
 			continue
 		}
 		tags = append(tags, ut)
 	}
+	t.SetScanTags(userTags)
 	if opts.PredictiveML && !(scannerType == "local" && localProtocol == "grpc") {
 		// Align with vendor docs: enable PML and feedback flags.
 		tags = append(tags, "pml:true", "feedback:true")
@@ -686,6 +696,10 @@ func (s *TaskStore) writePDF(taskID string, t *Task) (string, error) {
 	pdf.CellFormat(0, 6, "Files scanned: "+strconv.Itoa(snap.ScannedCount), "", 1, "L", false, 0, "")
 	pdfRow(pdf, 6, "", 10)
 	pdf.CellFormat(0, 6, "Malicious found: "+strconv.Itoa(len(snap.Malicious)), "", 1, "L", false, 0, "")
+	if len(snap.ScanTags) > 0 {
+		pdfRow(pdf, 6, "", 10)
+		pdf.CellFormat(0, 6, "Scan tags: "+strings.Join(snap.ScanTags, ", "), "", 1, "L", false, 0, "")
+	}
 	pdf.Ln(4)
 
 	if len(snap.Malicious) > 0 {

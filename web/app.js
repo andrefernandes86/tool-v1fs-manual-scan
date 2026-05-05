@@ -11,6 +11,36 @@
   const MAX_SCAN_TAGS_UI = 32;
   let scanTagChips = [];
 
+  async function updateScannerStatus() {
+    const chip = document.getElementById('scanner-status-chip');
+    if (!chip) return;
+
+    try {
+      const response = await fetch('/api/scanner/status');
+      const data = await response.json();
+
+      chip.classList.remove('header-chip-checking', 'header-chip-available', 'header-chip-unavailable');
+      const textEl = chip.querySelector('.status-text');
+
+      if (data.available) {
+        chip.classList.add('header-chip-available');
+        textEl.textContent = 'Scanner Available';
+      } else {
+        chip.classList.add('header-chip-unavailable');
+        textEl.textContent = 'Scanner Unavailable';
+      }
+    } catch (err) {
+      chip.classList.remove('header-chip-checking', 'header-chip-available', 'header-chip-unavailable');
+      chip.classList.add('header-chip-unavailable');
+      const textEl = chip.querySelector('.status-text');
+      textEl.textContent = 'Scanner Unavailable';
+    }
+  }
+
+  function startScannerStatusCheck() {
+    updateScannerStatus();
+  }
+
   function showPane(name) {
     document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
     const tab = document.querySelector('.side-nav-item[data-tab="' + name + '"]');
@@ -456,8 +486,6 @@
     const localScannerUrl = (document.getElementById('input-local-scanner-url') || {}).value ? document.getElementById('input-local-scanner-url').value.trim() : '';
     const localScannerApiKey = (document.getElementById('input-local-scanner-apikey') || {}).value ? document.getElementById('input-local-scanner-apikey').value.trim() : '';
     const localScannerProtocol = 'grpc';
-    const tlsEl = document.getElementById('input-local-scanner-tls');
-    const localScannerTls = !!(tlsEl && tlsEl.checked);
     if (scannerType === 'saas') {
       if (!apiKey || !region) {
         alert('API key and region are required for SaaS scanner.');
@@ -471,7 +499,7 @@
       await api('/api/config', {
         method: 'POST',
         json: true,
-        body: JSON.stringify({ apiKey, region, scannerType, localScannerUrl, localScannerApiKey, localScannerProtocol, localScannerTls })
+        body: JSON.stringify({ apiKey, region, scannerType, localScannerUrl, localScannerApiKey, localScannerProtocol, localScannerTls: false })
       });
       document.getElementById('input-apikey').value = '';
       loadConfig();
@@ -488,6 +516,16 @@
       const textEl = banner.querySelector('.scanner-container-hint-text');
       if (textEl) textEl.textContent = c.containerScanRootHint;
       banner.classList.toggle('hidden', !runningInContainer);
+      const toggle = banner.querySelector('.collapsible-banner-toggle');
+      if (toggle && !toggle.hasListener) {
+        toggle.hasListener = true;
+        toggle.addEventListener('click', function () {
+          const content = document.getElementById('scanner-container-content');
+          const isExpanded = toggle.getAttribute('aria-expanded') === 'true';
+          toggle.setAttribute('aria-expanded', !isExpanded);
+          content.classList.toggle('hidden');
+        });
+      }
     } else if (banner) {
       banner.classList.add('hidden');
     }
@@ -577,8 +615,6 @@
       if (modeRadio) modeRadio.checked = true;
       const localUrlEl = document.getElementById('input-local-scanner-url');
       if (localUrlEl) localUrlEl.value = c.localScannerUrl || '';
-      const tlsEl = document.getElementById('input-local-scanner-tls');
-      if (tlsEl) tlsEl.checked = !!c.localScannerTls;
       toggleScannerFields();
       const action = (c.actionOnMalware === 'quarantine' || c.actionOnMalware === 'delete') ? c.actionOnMalware : 'log';
       const radio = document.querySelector('input[name="actionOnMalware"][value="' + action + '"]');
@@ -643,12 +679,23 @@
     btnCompatScanner.addEventListener('click', async () => {
       try {
         const res = await api('/api/scanner/compat', { method: 'POST', json: true, body: JSON.stringify({}) });
-        alert(res.message || 'Scanner compatibility check succeeded.');
+        alert('✓ Malware detection works!\n\n' + (res.message || 'EICAR test file was detected as malicious.'));
       } catch (err) {
-        alert('Compatibility check failed: ' + err.message);
+        alert('✗ Malware detection failed:\n\n' + err.message);
       }
     });
   }
+
+  const tabButtons = document.querySelectorAll('.tab-button');
+  tabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const tabId = button.getAttribute('data-tab');
+      tabButtons.forEach(btn => btn.classList.remove('tab-button-active'));
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('tab-content-active'));
+      button.classList.add('tab-button-active');
+      document.getElementById(tabId).classList.add('tab-content-active');
+    });
+  });
 
   document.getElementById('form-scan-action').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -689,6 +736,7 @@
   renderScanTagChips();
   wireScanTagEntry();
   loadConfig();
+  startScannerStatusCheck();
   renderScanTargets();
   updateSelectButton();
 

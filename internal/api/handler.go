@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -47,6 +48,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.URL.Path == "/api/scanner/compat" && r.Method == http.MethodPost:
 		h.compatScanner(w, r)
+		return
+	case r.URL.Path == "/api/scanner/status" && r.Method == http.MethodGet:
+		h.scannerStatus(w, r)
 		return
 	case r.URL.Path == "/api/config/scan-action" && r.Method == http.MethodPost:
 		h.saveScanAction(w, r)
@@ -110,7 +114,7 @@ func scanTagsJSON(tags []string) []string {
 
 func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 	apiKey, region := h.cfg.Get()
-	scannerType, localURL, _, localProtocol, localTLS := h.cfg.GetScanner()
+	scannerType, localURL, _, localProtocol, _ := h.cfg.GetScanner()
 	action, quarantinePath := h.cfg.GetScanAction()
 	concurrency := h.cfg.GetScanConcurrency()
 	maxScans := h.cfg.GetMaxConcurrentScans()
@@ -125,7 +129,6 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"scannerType":        scannerType,
 		"localScannerUrl":    localURL,
 		"localScannerProtocol": localProtocol,
-		"localScannerTls":    localTLS,
 		"actionOnMalware":    action,
 		"quarantinePath":     quarantinePath,
 		"scanConcurrency":    concurrency,
@@ -137,7 +140,7 @@ func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
 		"runningInContainer": runningInContainer(),
 	}
 	if runningInContainer() {
-		out["containerScanRootHint"] = "Recursive scans include all subfolders.\n\nIn Docker, “/” is only this container (small). Your Mac, PC, USB drives, and home folder are not visible until you mount them with docker run -v.\n\n1) Add a volume: host path first, container path second. Then 2) add the container path under Scan targets.\n\nExamples (pick one that matches your case):\n• macOS home → container:  -v /Users/andre:/mnt/data  then scan  /mnt/data\n• Linux full host (read-only):  -v /:/host:ro  then scan  /host\n• USB / external disk (same path both sides):  -v /mnt/usb:/mnt/usb  then scan  /mnt/usb\n• Custom names:  -v /mnt/usb-drive:/mnt/external-drive  then scan  /mnt/external-drive"
+		out["containerScanRootHint"] = "The container can only see itself. To scan your USB drive, you must mount it first.\n\n==== STEP 1: STOP OLD CONTAINER ====\n\ndocker stop v1fs-scanner && docker rm v1fs-scanner\n\n\n==== STEP 2: PICK YOUR OS, FIND YOUR DRIVE, COPY COMMAND ====\n\n\n[macOS]\n\n1. Find your USB drive location:\n   Open Finder > Locations\n   Look at external drives listed\n   Example: /Volumes/MyDrive\n\n2. Copy and run this (CHANGE /Volumes/MyDrive to YOUR drive):\n\n   docker run -d -p 8080:8080 -v v1fs-data:/data -v /Volumes/MyDrive:/mnt/usb --name v1fs-scanner v1fs-scanner:latest\n\n3. Then go to Scanner and scan: /mnt/usb\n\n\n[Linux]\n\n1. Find your USB drive location:\n   Type in terminal: lsblk   OR   df -h\n   Look at the output\n   Example: /mnt/usb\n\n2. Copy and run this (CHANGE /mnt/usb to YOUR drive):\n\n   docker run -d -p 8080:8080 -v v1fs-data:/data -v /mnt/usb:/mnt/usb --name v1fs-scanner v1fs-scanner:latest\n\n3. Then go to Scanner and scan: /mnt/usb\n\n\n[Windows]\n\n1. Find your USB drive location:\n   Open File Explorer\n   Look at external drives\n   Example: D:/ or E:/\n   Enable file sharing in Docker Desktop Settings > Resources > File Sharing\n\n2. Copy and run this (CHANGE D:/ to YOUR drive):\n\n   docker run -d -p 8080:8080 -v v1fs-data:/data -v D:/:/mnt/usb --name v1fs-scanner v1fs-scanner:latest\n\n3. Then go to Scanner and scan: /mnt/usb"
 	}
 	json.NewEncoder(w).Encode(out)
 }
@@ -175,10 +178,6 @@ func (h *Handler) saveConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid gRPC address for local scanner", http.StatusBadRequest)
 			return
 		}
-		low := strings.ToLower(localURLRaw)
-		if strings.HasPrefix(low, "grpcs://") || strings.HasPrefix(low, "https://") {
-			body.LocalScannerTLS = true
-		}
 	} else {
 		if body.Region == "" || body.APIKey == "" {
 			http.Error(w, "apiKey and region required for saas scanner", http.StatusBadRequest)
@@ -186,7 +185,7 @@ func (h *Handler) saveConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.cfg.Set(body.APIKey, body.Region)
-	h.cfg.SetScanner(body.ScannerType, localURLRaw, strings.TrimSpace(body.LocalScannerAPIKey), body.LocalScannerProtocol, body.LocalScannerTLS)
+	h.cfg.SetScanner(body.ScannerType, localURLRaw, strings.TrimSpace(body.LocalScannerAPIKey), body.LocalScannerProtocol, false)
 	action := strings.TrimSpace(body.ActionOnMalware)
 	if action != "log" && action != "quarantine" && action != "delete" {
 		action = "log"
@@ -201,7 +200,7 @@ func (h *Handler) saveConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) testScanner(w http.ResponseWriter, r *http.Request) {
-	scannerType, localURL, localAPIKey, _, localTLS := h.cfg.GetScanner()
+	scannerType, localURL, localAPIKey, _, _ := h.cfg.GetScanner()
 	type result struct {
 		OK      bool   `json:"ok"`
 		Message string `json:"message"`
@@ -216,22 +215,27 @@ func (h *Handler) testScanner(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "local scanner gRPC address is invalid", http.StatusBadRequest)
 			return
 		}
-		client, err := v1client.NewClientInternal(strings.TrimSpace(localAPIKey), addr, localTLS, "")
-		if err != nil {
-			http.Error(w, "local gRPC scanner is not reachable: "+err.Error(), http.StatusBadGateway)
+		if !strings.Contains(addr, ":") {
+			http.Error(w, "gRPC address must include a port (e.g., host:port)", http.StatusBadRequest)
 			return
 		}
-		client.Destroy()
-		w.Header().Set("Content-Type", "application/json")
-		msg := "local gRPC scanner is reachable at " + addr
-		if !localTLS {
-			msg += " (TLS disabled)"
+		client, err := v1client.NewClientInternal(strings.TrimSpace(localAPIKey), addr, false, "")
+		if err != nil {
+			http.Error(w, "gRPC scanner connection failed: "+err.Error(), http.StatusBadGateway)
+			return
 		}
+		defer client.Destroy()
+		probe := []byte("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+		_, probeErr := client.ScanBuffer(probe, "scanner-test.internal", []string{"v1fs-scanner", "scanner-connection-test"})
+		if probeErr != nil {
+			http.Error(w, "gRPC gateway connected but the anti-malware engine is not responding (check if the backend scanner service is running)", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		msg := "gRPC scanner is responding correctly at " + addr
 		json.NewEncoder(w).Encode(result{OK: true, Message: msg})
 		return
 	}
-	// SaaS mode: verify required configuration. Network checks can fail in restricted
-	// environments even when scanner configuration is valid, so keep this check reliable.
 	apiKey, region := h.cfg.Get()
 	if apiKey == "" || region == "" {
 		http.Error(w, "api key and region are required for saas scanner", http.StatusBadRequest)
@@ -242,7 +246,7 @@ func (h *Handler) testScanner(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) compatScanner(w http.ResponseWriter, r *http.Request) {
-	scannerType, localURL, localAPIKey, _, localTLS := h.cfg.GetScanner()
+	scannerType, localURL, localAPIKey, _, _ := h.cfg.GetScanner()
 	type result struct {
 		OK      bool   `json:"ok"`
 		Message string `json:"message"`
@@ -257,7 +261,7 @@ func (h *Handler) compatScanner(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "local scanner gRPC address is invalid", http.StatusBadRequest)
 			return
 		}
-		client, err := v1client.NewClientInternal(strings.TrimSpace(localAPIKey), addr, localTLS, "")
+		client, err := v1client.NewClientInternal(strings.TrimSpace(localAPIKey), addr, false, "")
 		if err != nil {
 			http.Error(w, "compatibility check failed to connect: "+err.Error(), http.StatusBadGateway)
 			return
@@ -269,7 +273,7 @@ func (h *Handler) compatScanner(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		msg := "local gRPC scanner accepted a probe scan (same tags and ScanFile→ScanBuffer path as directory scans)"
+		msg := "local gRPC scanner accepted a probe scan (same tags and ScanFile->ScanBuffer path as directory scans)"
 		if warn != "" {
 			msg = warn
 		}
@@ -289,13 +293,56 @@ func (h *Handler) compatScanner(w http.ResponseWriter, r *http.Request) {
 	}
 	defer client.Destroy()
 	probe := []byte("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
-	_, err = client.ScanBuffer(probe, "eicar-compat-check.com", []string{"compat-check"})
+	verdict, err := client.ScanBuffer(probe, "usb-scanner-heartbeat.internal", []string{"v1fs-scanner", "usb-scanner-heartbeat"})
 	if err != nil {
-		http.Error(w, "saas compatibility check failed: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "malware detection test failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result{OK: true, Message: "saas scanner is compatible and accepted a probe scan"})
+	if verdict == "" {
+		http.Error(w, "EICAR test file was not detected as malicious", http.StatusBadGateway)
+		return
+	}
+	json.NewEncoder(w).Encode(result{OK: true, Message: "malware detection is working (EICAR detected as: " + verdict + ")"})
+}
+
+func (h *Handler) scannerStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	scannerType, localURL, localAPIKey, _, _ := h.cfg.GetScanner()
+	apiKey, region := h.cfg.Get()
+
+	available := false
+
+	if scannerType == "local" {
+		if localURL != "" {
+			addr := normalizeLocalScannerGRPCAddr(localURL)
+			if addr != "" {
+				client, err := v1client.NewClientInternal(strings.TrimSpace(localAPIKey), addr, false, "")
+				if err == nil {
+					defer client.Destroy()
+					probe := []byte("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+					_, err := client.ScanBuffer(probe, "usb-scanner-heartbeat.internal", []string{"v1fs-scanner", "usb-scanner-heartbeat"})
+					if err == nil {
+						available = true
+					}
+				}
+			}
+		}
+	} else {
+		if apiKey != "" && region != "" {
+			client, err := v1client.NewClient(apiKey, region)
+			if err == nil {
+				defer client.Destroy()
+				probe := []byte("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+				_, err := client.ScanBuffer(probe, "usb-scanner-heartbeat.internal", []string{"v1fs-scanner", "usb-scanner-heartbeat"})
+				if err == nil {
+					available = true
+				}
+			}
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]bool{"available": available})
 }
 
 func (h *Handler) saveScanAction(w http.ResponseWriter, r *http.Request) {
@@ -494,7 +541,7 @@ func (h *Handler) startScan(w http.ResponseWriter, r *http.Request) {
 	if runningInContainer() {
 		for _, p := range scanRoots {
 			if p == string(filepath.Separator) {
-				out["scanHint"] = "“/” here is only this container (~hundreds of files). To scan your real disks, restart with -v and target that path—for example -v /Users/andre:/mnt/data and scan /mnt/data, or -v /:/host:ro and scan /host (Linux)."
+				out["scanHint"] = "The root / here is only this container (few hundred files). To scan your real disks, restart with -v HOST:/CONTAINER and target that path—for example -v /Users/you:/mnt/data and scan /mnt/data, or -v /:/host:ro and scan /host (Linux)."
 				break
 			}
 		}
@@ -641,22 +688,25 @@ func localGRPCCompatProbe(client localGRPCCompatClient) (warning string, err err
 	if cerr := tmp.Close(); cerr != nil {
 		return "", cerr
 	}
-	tags := []string{"v1fs-scanner"}
-	_, errFile := client.ScanFile(path, tags)
-	if errFile == nil {
+	tags := []string{"v1fs-scanner", "usb-scanner-heartbeat"}
+	verdict, errFile := client.ScanFile(path, tags)
+	if errFile == nil && verdict != "" {
 		return "", nil
 	}
-	if !grpcLocalProbeSoftFailure(errFile) {
+	if errFile != nil && !grpcLocalProbeSoftFailure(errFile) {
 		return "", errFile
 	}
-	_, errBuf := client.ScanBuffer(probe, "eicar.com", tags)
-	if errBuf == nil {
+	verdict, errBuf := client.ScanBuffer(probe, "usb-scanner-heartbeat.internal", tags)
+	if errBuf == nil && verdict != "" {
 		return "", nil
+	}
+	if errBuf != nil && !grpcLocalProbeSoftFailure(errBuf) {
+		return "", errBuf
 	}
 	if grpcLocalProbeSoftFailure(errBuf) {
 		return "Gateway is reachable but rejected the malware probe with a version-handshake error. If directory or EICAR test scans still complete, your deployment is usable; otherwise upgrade the gateway or File Security SDK to matching versions.", nil
 	}
-	return "", errBuf
+	return "", fmt.Errorf("EICAR test file was not detected as malicious")
 }
 
 func normalizeLocalScannerURL(raw string) string {
@@ -682,3 +732,4 @@ func normalizeLocalScannerGRPCAddr(raw string) string {
 	v = strings.TrimSuffix(v, "/")
 	return v
 }
+
