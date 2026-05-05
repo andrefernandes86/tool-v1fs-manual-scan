@@ -8,19 +8,13 @@ A web-based tool to scan folders for malware using Trend Vision One. No technica
 
 ### 1. Scanner Tab — Browse and Select Folders
 
-![Scanner tab with folder browser and scan targets](docs/screenshots/ui-scanner-docker-hint.png)
-
 Browse your drives, select folders to scan, and add them to your scan targets. The app shows a helpful guide when running in Docker.
 
 ### 2. Scanner Tab — Navigate Folders
 
-![Scanner tab showing folder navigation with checkboxes](docs/screenshots/ui-scanner-locations-root.png)
-
 Click folders to navigate, use the **↑ Parent** button to go back, and checkboxes to select what to scan.
 
 ### 3. Settings — Configure Scanner
-
-![Settings page for API key and region setup](docs/screenshots/ui-settings-scanner.png)
 
 Choose between **SaaS Scanner** (cloud-based) or **Local Scanner** (on-premises). Enter your API key and region, then test the connection.
 
@@ -32,8 +26,6 @@ Choose your response to detected malware:
 - **Delete** — Permanently remove the file
 
 ### 5. Settings — Advanced Options
-
-![Advanced options with stacked checkboxes](docs/screenshots/ui-settings-actions-performance.png)
 
 **Scan Optimization** (stacked vertically for clarity):
 - Generate SHA-256 hashes for malicious files
@@ -54,13 +46,9 @@ Add custom labels to organize your scans:
 
 ### 7. Settings — Test Options
 
-![Test options for EICAR and clean file samples](docs/screenshots/ui-settings-test-options.png)
-
 Run quick tests with sample files to verify your scanner is working correctly before scanning important data.
 
 ### 8. Scan in Progress — Live Detection
-
-![Scan in progress with live malicious detection](docs/screenshots/ui-scan-progress-malicious.png)
 
 Real-time progress showing:
 - **Target(s)**: Folders being scanned
