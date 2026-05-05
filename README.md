@@ -24,23 +24,55 @@ Click folders to navigate, use the **↑ Parent** button to go back, and checkbo
 
 Choose between **SaaS Scanner** (cloud-based) or **Local Scanner** (on-premises). Enter your API key and region, then test the connection.
 
-### 4. Settings — Actions & Performance
+### 4. Settings — When Malware is Detected
 
-![Settings for malware actions and scan options](docs/screenshots/ui-settings-actions-performance.png)
+Choose your response to detected malware:
+- **Log only** — Record in report, keep the file
+- **Move to quarantine folder** — Isolate the file safely
+- **Delete** — Permanently remove the file
 
-Configure what happens when malware is found (log, quarantine, or delete), and set advanced options like scan tags and concurrency limits.
+### 5. Settings — Advanced Options
 
-### 5. Settings — Test Options
+![Advanced options with stacked checkboxes](docs/screenshots/ui-settings-actions-performance.png)
+
+**Scan Optimization** (stacked vertically for clarity):
+- Generate SHA-256 hashes for malicious files
+- Enable predictive machine learning (PML)
+
+**Concurrency & Reporting**:
+- Maximum simultaneous scans (up to 10,000)
+- Report generation mode (summary or all files)
+
+### 6. Settings — Scan Tags
+
+Add custom labels to organize your scans:
+- Type a tag name (e.g., "project-a", "usb-drive")
+- Press **Enter** to add as a chip
+- Click **×** to remove a tag
+- Tags appear in PDF reports and Vision One
+- Maximum 32 tags per configuration
+
+### 7. Settings — Test Options
 
 ![Test options for EICAR and clean file samples](docs/screenshots/ui-settings-test-options.png)
 
 Run quick tests with sample files to verify your scanner is working correctly before scanning important data.
 
-### 6. Scan Results — Detection Example
+### 8. Scan Results — Detection Example
 
 ![Scan in progress showing malware detection](docs/screenshots/ui-scan-progress-malicious.png)
 
 Live progress during scanning, with detected malware listed and a PDF report download when finished.
+
+### Scanner Health Check
+
+When you click **Test scanner connection** or **Test malware detection**, you'll see confirmation that your scanner is working:
+
+```
+✓ gRPC scanner is responding correctly at 192.168.200.71:31050
+```
+
+This ensures everything is configured properly before running actual scans.
 
 ---
 
