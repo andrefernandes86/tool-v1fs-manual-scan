@@ -58,11 +58,41 @@ Add custom labels to organize your scans:
 
 Run quick tests with sample files to verify your scanner is working correctly before scanning important data.
 
-### 8. Scan Results — Detection Example
+### 8. Scan in Progress — Live Detection
 
-![Scan in progress showing malware detection](docs/screenshots/ui-scan-progress-malicious.png)
+![Scan in progress with live malicious detection](docs/screenshots/ui-scan-progress-malicious.png)
 
-Live progress during scanning, with detected malware listed and a PDF report download when finished.
+Real-time progress showing:
+- **Target(s)**: Folders being scanned
+- **Elapsed**: Time spent scanning
+- **Files scanned**: Progress counter
+- **Malicious found**: Detection count in real-time
+- **Download PDF report**: Get detailed results when finished
+- **Malicious files detected**: Red banner listing all threats found
+- **Scan details**: Throughput (files/second) and estimated time remaining
+
+### 9. Scan History — Review Past Scans
+
+View all completed scans with quick details:
+- **Report name**: Your custom scan label
+- **Path**: Folders that were scanned
+- **Started**: Date and time of scan
+- **Files**: Total files checked
+- **Malicious**: Threats detected
+- **Report**: Download PDF link for each scan
+
+### 10. PDF Report — Complete Findings
+
+Each PDF report includes:
+- **Report name**: Your custom label
+- **Report mode**: Summary or all files
+- **Scan path**: Folder scanned
+- **Started**: Timestamp
+- **Files scanned**: Total count
+- **Malicious found**: Detection count
+- **Scan tags**: Your custom labels (e.g., "MyTag1, MyTag2")
+- **Malicious files**: Detailed list with file paths and malware names
+- **Clean files**: (Optional) All clean files if report mode is set to "all"
 
 ### Scanner Health Check
 
@@ -70,6 +100,7 @@ When you click **Test scanner connection** or **Test malware detection**, you'll
 
 ```
 ✓ gRPC scanner is responding correctly at 192.168.200.71:31050
+✓ Malware detection works!
 ```
 
 This ensures everything is configured properly before running actual scans.
@@ -269,16 +300,21 @@ docker rm v1fs-scanner
 
 ---
 
-## Features
+## Key Features
 
 ✅ **Web interface** — No command line required  
-✅ **Real-time progress** — See what's being scanned  
-✅ **PDF reports** — Download results with details  
-✅ **Scan history** — Review past scans anytime  
-✅ **Multiple folders** — Scan several locations in one job  
-✅ **Scan tags** — Label and organize your scans  
-✅ **Custom actions** — Log, quarantine, or delete detected files  
-✅ **Persistent config** — Settings saved across restarts  
+✅ **Real-time progress** — See what's being scanned with live counters  
+✅ **PDF reports** — Download detailed results with malware details, file hashes, and scan tags  
+✅ **Scan history** — Review all past scans with quick statistics and download links  
+✅ **Multiple folders** — Scan several locations in one job (up to 32 paths)  
+✅ **Scan tags** — Label scans with custom tags (e.g., "project-a", "usb-drive")
+  - Tags appear in PDF reports
+  - Tags sent to Vision One for filtering
+  - Maximum 32 tags per configuration  
+✅ **Custom actions** — Choose response to malware (log, quarantine, or delete)  
+✅ **Persistent config** — Settings saved across container restarts  
+✅ **Test verification** — Built-in EICAR and clean file tests to verify scanner works  
+✅ **Advanced options** — Control file hashing, ML prediction, concurrency (up to 10,000 scans)  
 
 ---
 
