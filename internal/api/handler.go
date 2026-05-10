@@ -221,7 +221,7 @@ func (h *Handler) testScanner(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer client.Destroy()
-		probe := []byte("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+		probe := eicarProbe()
 		_, probeErr := client.ScanBuffer(probe, "scanner-test.internal", []string{"v1fs-scanner", "scanner-connection-test"})
 		if probeErr != nil {
 			http.Error(w, "gRPC gateway connected but the anti-malware engine is not responding (check if the backend scanner service is running)", http.StatusBadGateway)
@@ -288,7 +288,7 @@ func (h *Handler) compatScanner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer client.Destroy()
-	probe := []byte("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+	probe := eicarProbe()
 	verdict, err := client.ScanBuffer(probe, "usb-scanner-heartbeat.internal", []string{"v1fs-scanner", "usb-scanner-heartbeat"})
 	if err != nil {
 		http.Error(w, "malware detection test failed: "+err.Error(), http.StatusBadGateway)
@@ -316,7 +316,7 @@ func (h *Handler) scannerStatus(w http.ResponseWriter, r *http.Request) {
 				client, err := v1client.NewClientInternal(strings.TrimSpace(localAPIKey), addr, false, "")
 				if err == nil {
 					defer client.Destroy()
-					probe := []byte("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+					probe := eicarProbe()
 					_, err := client.ScanBuffer(probe, "usb-scanner-heartbeat.internal", []string{"v1fs-scanner", "usb-scanner-heartbeat"})
 					if err == nil {
 						available = true
@@ -329,7 +329,7 @@ func (h *Handler) scannerStatus(w http.ResponseWriter, r *http.Request) {
 			client, err := v1client.NewClient(apiKey, region)
 			if err == nil {
 				defer client.Destroy()
-				probe := []byte("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+				probe := eicarProbe()
 				_, err := client.ScanBuffer(probe, "usb-scanner-heartbeat.internal", []string{"v1fs-scanner", "usb-scanner-heartbeat"})
 				if err == nil {
 					available = true
@@ -670,7 +670,7 @@ func grpcLocalProbeSoftFailure(err error) bool {
 // localGRPCCompatProbe mirrors directory scans: ScanFile first, then ScanBuffer with v1fs-scanner tags.
 // Some gateways return Unimplemented / "not compatible" for buffer-only probes while still scanning files.
 func localGRPCCompatProbe(client localGRPCCompatClient) (warning string, err error) {
-	probe := []byte("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+	probe := eicarProbe()
 	tmp, err := os.CreateTemp("", "v1fs-compat-*.com")
 	if err != nil {
 		return "", err

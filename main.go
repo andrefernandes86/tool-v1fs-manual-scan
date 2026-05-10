@@ -11,19 +11,13 @@ import (
 	"v1fs-scanner/internal/scanner"
 )
 
-// EICAR standard antivirus test file content (68 bytes, no newline)
-const eicarContent = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
-
+// createTestSamples seeds the clean test file at startup.
+// The EICAR sample is NOT written here — it is assembled on demand
+// by eicarProbe() only when a test submission is triggered.
 func createTestSamples(dir string) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		log.Printf("create test-samples dir: %v", err)
 		return
-	}
-	eicarPath := filepath.Join(dir, "eicar.com")
-	if err := os.WriteFile(eicarPath, []byte(eicarContent), 0644); err != nil {
-		log.Printf("write eicar.com: %v", err)
-	} else {
-		log.Printf("created test sample: %s", eicarPath)
 	}
 	helloPath := filepath.Join(dir, "hello.txt")
 	if err := os.WriteFile(helloPath, []byte("Hello World\n"), 0644); err != nil {
