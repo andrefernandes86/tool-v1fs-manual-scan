@@ -14,7 +14,6 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 
 COPY --from=builder /v1fs-scanner .
-COPY web ./web
 
 ENV PORT=8080
 ENV V1FS_CONFIG_PATH=/data/config.json

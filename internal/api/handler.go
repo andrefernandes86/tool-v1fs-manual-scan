@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,14 +17,15 @@ import (
 )
 
 type Handler struct {
-	cfg            *config.Config
-	configPath     string
-	store          *scanner.TaskStore
+	cfg             *config.Config
+	configPath      string
+	store           *scanner.TaskStore
 	testSamplesPath string
+	webFS           fs.FS
 }
 
-func NewHandler(cfg *config.Config, configPath string, store *scanner.TaskStore, testSamplesPath string) *Handler {
-	return &Handler{cfg: cfg, configPath: configPath, store: store, testSamplesPath: testSamplesPath}
+func NewHandler(cfg *config.Config, configPath string, store *scanner.TaskStore, testSamplesPath string, webFS fs.FS) *Handler {
+	return &Handler{cfg: cfg, configPath: configPath, store: store, testSamplesPath: testSamplesPath, webFS: webFS}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -83,13 +85,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) serveStatic(name string, w http.ResponseWriter, r *http.Request) {
-	// Embedded or relative to binary; fallback to current dir for dev
-	dir := "web"
-	if _, err := os.Stat(dir); err != nil {
-		dir = "."
-	}
-	path := filepath.Join(dir, name)
-	data, err := os.ReadFile(path)
+	data, err := fs.ReadFile(h.webFS, name)
 	if err != nil {
 		http.NotFound(w, r)
 		return

@@ -1,103 +1,23 @@
 # V1 File Security Scanner
 
-A web-based tool to scan folders for malware using Trend Vision One. No technical knowledge required — just select folders, click scan, and download a report.
+A malware-scanning tool powered by the **Trend Vision One File Security SDK**. Browse folders, scan for threats, and download PDF reports — all through a clean web interface. No technical knowledge required.
+
+Available in four deployment options:
+
+| Option | Platform | UI | Requires |
+|--------|----------|----|----------|
+| [Docker](#option-1-docker) | Any OS | Browser at `localhost:8080` | Docker |
+| [macOS App](#option-2-macos-app) | macOS 12+ | Opens your browser automatically | Nothing |
+| [Linux binary](#option-3-linux-binary) | Linux x86-64 | Browser (URL printed to terminal) | Nothing |
+| [Windows app](#option-4-windows-app) | Windows 10/11 | Dedicated app window (Edge app mode) | Nothing |
 
 ---
 
-## Visual Walkthrough
+## Option 1 — Docker
 
-### 1. Scanner Tab — Browse and Select Folders
+Best for: scanning drives mounted from any OS, running on a server, or when you don't want to install anything locally.
 
-Browse your drives, select folders to scan, and add them to your scan targets. The app shows a helpful guide when running in Docker.
-
-### 2. Scanner Tab — Navigate Folders
-
-Click folders to navigate, use the **↑ Parent** button to go back, and checkboxes to select what to scan.
-
-### 3. Settings — Configure Scanner
-
-Choose between **SaaS Scanner** (cloud-based) or **Local Scanner** (on-premises). Enter your API key and region, then test the connection.
-
-### 4. Settings — When Malware is Detected
-
-Choose your response to detected malware:
-- **Log only** — Record in report, keep the file
-- **Move to quarantine folder** — Isolate the file safely
-- **Delete** — Permanently remove the file
-
-### 5. Settings — Advanced Options
-
-**Scan Optimization** (stacked vertically for clarity):
-- Generate SHA-256 hashes for malicious files
-- Enable predictive machine learning (PML)
-
-**Concurrency & Reporting**:
-- Maximum simultaneous scans (up to 10,000)
-- Report generation mode (summary or all files)
-
-### 6. Settings — Scan Tags
-
-Add custom labels to organize your scans:
-- Type a tag name (e.g., "project-a", "usb-drive")
-- Press **Enter** to add as a chip
-- Click **×** to remove a tag
-- Tags appear in PDF reports and Vision One
-- Maximum 32 tags per configuration
-
-### 7. Settings — Test Options
-
-Run quick tests with sample files to verify your scanner is working correctly before scanning important data.
-
-### 8. Scan in Progress — Live Detection
-
-Real-time progress showing:
-- **Target(s)**: Folders being scanned
-- **Elapsed**: Time spent scanning
-- **Files scanned**: Progress counter
-- **Malicious found**: Detection count in real-time
-- **Download PDF report**: Get detailed results when finished
-- **Malicious files detected**: Red banner listing all threats found
-- **Scan details**: Throughput (files/second) and estimated time remaining
-
-### 9. Scan History — Review Past Scans
-
-View all completed scans with quick details:
-- **Report name**: Your custom scan label
-- **Path**: Folders that were scanned
-- **Started**: Date and time of scan
-- **Files**: Total files checked
-- **Malicious**: Threats detected
-- **Report**: Download PDF link for each scan
-
-### 10. PDF Report — Complete Findings
-
-Each PDF report includes:
-- **Report name**: Your custom label
-- **Report mode**: Summary or all files
-- **Scan path**: Folder scanned
-- **Started**: Timestamp
-- **Files scanned**: Total count
-- **Malicious found**: Detection count
-- **Scan tags**: Your custom labels (e.g., "MyTag1, MyTag2")
-- **Malicious files**: Detailed list with file paths and malware names
-- **Clean files**: (Optional) All clean files if report mode is set to "all"
-
-### Scanner Health Check
-
-When you click **Test scanner connection** or **Test malware detection**, you'll see confirmation that your scanner is working:
-
-```
-✓ gRPC scanner is responding correctly at 192.168.200.71:31050
-✓ Malware detection works!
-```
-
-This ensures everything is configured properly before running actual scans.
-
----
-
-## Getting Started (Docker)
-
-### 1. Start the application
+### Start
 
 ```bash
 docker run -d -p 8080:8080 \
@@ -108,258 +28,329 @@ docker run -d -p 8080:8080 \
 
 Then open **http://localhost:8080** in your browser.
 
-### 2. Set up your API key
+### Stop / Restart
 
-1. Click **Settings** in the left menu
-2. Under **V1 File Security settings**, enter your **Trend Vision One API key** and select your **Region**
-3. Click **Save scanner settings**
+```bash
+docker stop v1fs-scanner
+docker restart v1fs-scanner
+```
 
-That's it. Your configuration is saved and will persist even if you restart the application.
+### Scan external drives or folders from your host
 
----
-
-## How to Scan
-
-### Step 1: Select folders to scan
-
-1. Click **Scanner** in the left menu
-2. Use **Locations** to browse your drives and folders
-3. Select the folders you want to scan using the checkboxes
-4. You can add multiple folders to scan them all in one job
-
-### Step 2: Start the scan
-
-1. Click **Start scan**
-2. (Optional) Give your scan a name in the dialog
-3. The scan will run — you'll see live progress with:
-   - Files scanned so far
-   - Any malicious files found
-   - Current file being scanned
-
-### Step 3: Download the report
-
-When the scan finishes, click **Download PDF report** to get a detailed report with:
-- Total files scanned
-- Malicious files detected (if any)
-- File paths and malware names
-- Scan date and time
-
----
-
-## Scanning External Drives (USB, External HDD, etc.)
-
-### On Linux or macOS
-
-First, mount the drive on your computer, then add it to Docker when you start:
+Mount the path you want to scan when starting the container:
 
 ```bash
 docker run -d -p 8080:8080 \
   -v v1fs-data:/data \
-  -v /mnt/usb:/mnt/usb:ro \
+  -v /path/to/drive:/mnt/drive:ro \
   --name v1fs-scanner \
   v1fs-scanner:latest
 ```
 
-Replace `/mnt/usb` with the actual path to your drive.
+Then in the app browse to `/mnt/drive`.
 
-Then in the app:
+> **Windows users:** BitLocker-encrypted drives must be unlocked in Windows first. Once unlocked, they appear as normal directories and can be mapped with `-v`.
+
+---
+
+## Option 2 — macOS App
+
+Best for: scanning your Mac directly without Docker. The script builds the binary on first run and opens your default browser automatically.
+
+### Run
+
+```bash
+cd apps/macos
+./run.sh
+```
+
+The script detects your architecture (Intel or Apple Silicon), compiles the binary if needed, and opens `http://localhost:8080` in your browser. Config and reports are saved to `~/Library/Application Support/V1FSScanner/`.
+
+### Build a .app bundle (optional)
+
+```bash
+make darwin-app
+open apps/macos/V1FSScanner.app
+```
+
+> First launch may require: **System Settings → Privacy & Security → Open Anyway** (Gatekeeper prompt for unsigned binaries).
+> Or clear the quarantine flag first: `xattr -cr apps/macos/V1FSScanner.app`
+
+---
+
+## Option 3 — Linux Binary
+
+Best for: servers, NAS devices, or automated scanning pipelines. Runs headlessly — no browser is opened, the URL is printed to the terminal.
+
+### Run
+
+```bash
+cd apps/linux
+./run.sh
+```
+
+Output:
+
+```
+V1FS Scanner ready → http://localhost:8080
+```
+
+Open that URL in any browser. Config and reports are saved to `~/.config/V1FSScanner/`.
+
+### Change the port
+
+```bash
+PORT=9000 ./v1fs-scanner
+```
+
+### Run as a systemd service
+
+```ini
+[Unit]
+Description=V1FS Scanner
+After=network.target
+
+[Service]
+ExecStart=/opt/v1fs-scanner/v1fs-scanner
+Environment=PORT=8080
+Environment=TM_V1_API_KEY=your-key-here
+Environment=TM_V1_REGION=us-east-1
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+---
+
+## Option 4 — Windows App
+
+Best for: scanning Windows machines natively. The `.exe` has no console window and opens a dedicated **Microsoft Edge app-mode window** (no browser address bar or tabs — looks and feels like a native desktop app). Falls back to Chrome app-mode, then the default browser if neither is found.
+
+### Build
+
+On any machine with Go installed (cross-compilation works from macOS or Linux too):
+
+```bash
+make windows
+```
+
+Output: `apps/windows/v1fs-scanner.exe`
+
+### Run
+
+Copy `apps/windows/v1fs-scanner.exe` to the Windows machine and double-click it. A window opens automatically pointing to `http://localhost:8080`. Config and reports are saved to `%APPDATA%\V1FSScanner\`.
+
+> Edge is always available on Windows 10/11. If you prefer Chrome, have it installed and it will be used as the second choice.
+
+### Scanning drives
+
+The app browser shows all accessible drive letters (C:, D:, E:, …). Navigate to the drive you want to scan and select folders normally.
+
+---
+
+## Getting Started (all platforms)
+
+### 1. Configure your API key
+
+1. Click **Settings** in the left menu
+2. Under **V1 File Security settings**, enter your **Trend Vision One API key** and **Region**
+3. Click **Save scanner settings**
+
+### 2. Select folders to scan
+
 1. Click **Scanner**
-2. Browse to your drive folder (e.g., `/mnt/usb`)
-3. Click **Add current folder**
-4. Click **Start scan**
+2. Browse drives and folders in the **Locations** panel
+3. Tick the folders you want to scan — you can add multiple
 
-**Tip:** Use `:ro` (read-only) if you only want to scan and report. Remove it if you want the app to quarantine or delete detected files.
+### 3. Start the scan
+
+1. Click **Start scan**
+2. Optionally give the scan a name
+3. Watch live progress: files scanned, detections, throughput
+
+### 4. Download the report
+
+Click **Download PDF report** when the scan finishes. The report includes:
+- All scanned paths
+- Malicious files with names and malware labels
+- Optional SHA-256 hashes
+- Scan tags you configured
+- Clean file list (if report mode is set to "all")
 
 ---
 
 ## Settings Overview
 
 ### Scanner Connection
-- **API Key**: Your Trend Vision One credentials (required to scan)
-- **Region**: Where your API key is registered (e.g., us-east-1, eu-central-1)
+
+| Setting | Description |
+|---------|-------------|
+| API Key | Your Trend Vision One credentials |
+| Region | Where your API key is registered |
+| Scanner type | SaaS (cloud) or Local (on-premises gRPC) |
 
 ### When Malware is Detected
-Choose what happens when a malicious file is found:
-- **Log only**: Record in report, keep the file
-- **Quarantine**: Move to a safe folder
-- **Delete**: Remove the file permanently
+
+| Action | Effect |
+|--------|--------|
+| Log only | Record in report, keep file |
+| Quarantine | Move file to an isolated folder |
+| Delete | Permanently remove the file |
 
 ### Advanced Options
-- **Generate SHA-256 hashes**: Add file checksums to reports (slows down scans)
-- **Enable predictive machine learning**: Improved detection (available with SaaS scanner)
-- **Maximum simultaneous scans**: How many scans can run at the same time (default: unlimited)
-- **Report generation mode**: Show just malicious files or all files scanned
+
+| Option | Default |
+|--------|---------|
+| SHA-256 hashes | Off (slows scans on large drives) |
+| Predictive machine learning | Off |
+| Max simultaneous scans | 8 (up to 10,000) |
+| Report mode | Malicious files only |
 
 ### Scan Tags
-Add custom labels to your scans for filtering in Vision One:
-1. Type a tag name (e.g., "project-x", "usb-drive")
-2. Press **Enter**
-3. Tags appear as chips — click **×** to remove
-4. These tags are included in your PDF report and sent to Vision One
+
+Add custom labels (e.g., `project-x`, `usb-drive`) that appear in PDF reports and are forwarded to Vision One for filtering. Up to 32 tags.
 
 ---
 
 ## Testing
 
-Before scanning important data, run a quick test:
+Before scanning real data, verify your setup:
 
-1. Click **Settings**
-2. Scroll to **Test options**
-3. Click **Submit EICAR test file** to test if detection works
-4. Click **Submit clean test file** to verify clean files are not flagged
-
-Both tests create a sample folder and scan it — results show in real time.
+1. Click **Settings → Test options**
+2. **Test scanner connection** — confirms your API key and region work
+3. **Submit EICAR test file** — confirms malware detection works
+4. **Submit clean test file** — confirms clean files are not flagged
 
 ---
 
-## View Scan History
+## Scan History
 
-Click **History** to see all past scans with:
-- Scan date and time
-- Folders that were scanned
-- Number of files checked
-- Malicious files found
-- Download links for previous reports
+Click **History** to review all completed scans with date, paths, file count, detections, and PDF download links.
 
 ---
 
 ## Troubleshooting
 
 ### "Scan connection failed"
-- Check your API key in **Settings**
-- Make sure you selected the correct region
-- Click **Test scanner connection** to verify
+Check your API key and region in **Settings**, then click **Test scanner connection**.
 
-### "Only found 300 files when scanning root"
-You're probably scanning inside the container, not your actual disk. When using Docker, you must mount your real drives. Example:
+### Docker: only finds ~300 files when scanning "/"
+You are scanning inside the container, not your real disk. Mount your host path:
 
 ```bash
-docker run -d -p 8080:8080 \
-  -v v1fs-data:/data \
-  -v /Users/yourname:/mnt/home:ro \
-  --name v1fs-scanner \
-  v1fs-scanner:latest
+docker run ... -v /Users/you:/mnt/home:ro ...
 ```
 
-Then scan `/mnt/home` instead of `/`.
+Then scan `/mnt/home`.
 
-### Permissions error
-Make sure the container can read the folders. Use `:ro` (read-only) flag in Docker if you don't need write access:
-
+### macOS: "app is damaged" / Gatekeeper blocks the binary
+The binary is not Apple-notarized. Allow it via:
+```
+System Settings → Privacy & Security → Open Anyway
+```
+Or from Terminal:
 ```bash
--v /path/to/folder:/mnt/folder:ro
+xattr -cr ./v1fs-scanner   # clear quarantine flag
 ```
+
+### Windows: nothing opens after double-click
+Edge may be in a non-standard install location. Open a browser manually at `http://localhost:8080`. Check Task Manager — the process should be running.
 
 ---
 
-## Docker Commands Reference
+## Environment Variables
 
-**Start the app**
-```bash
-docker run -d -p 8080:8080 \
-  -v v1fs-data:/data \
-  --name v1fs-scanner \
-  v1fs-scanner:latest
-```
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `TM_V1_API_KEY` | Vision One API key (avoids entering in UI) | — |
+| `TM_V1_REGION` | API region | — |
+| `PORT` | HTTP port | `8080` |
+| `V1FS_CONFIG_PATH` | Full path to config file | OS-specific |
+| `V1FS_REPORTS_DIR` | Directory for PDF reports | OS-specific |
 
-**Stop the app**
-```bash
-docker stop v1fs-scanner
-```
+Default data directories by platform:
 
-**Restart the app**
-```bash
-docker restart v1fs-scanner
-```
-
-**Remove the app** (keeps your scans and config)
-```bash
-docker stop v1fs-scanner
-docker rm v1fs-scanner
-```
-
-**Update to latest version**
-```bash
-docker pull v1fs-scanner:latest
-docker stop v1fs-scanner
-docker rm v1fs-scanner
-# Then run the docker run command again
-```
+| Platform | Config & reports location |
+|----------|--------------------------|
+| Docker | `/data/` (persistent volume) |
+| macOS | `~/Library/Application Support/V1FSScanner/` |
+| Linux | `~/.config/V1FSScanner/` |
+| Windows | `%APPDATA%\V1FSScanner\` |
 
 ---
 
-## Key Features
+## Project Structure
 
-✅ **Web interface** — No command line required  
-✅ **Real-time progress** — See what's being scanned with live counters  
-✅ **PDF reports** — Download detailed results with malware details, file hashes, and scan tags  
-✅ **Scan history** — Review all past scans with quick statistics and download links  
-✅ **Multiple folders** — Scan several locations in one job (up to 32 paths)  
-✅ **Scan tags** — Label scans with custom tags (e.g., "project-a", "usb-drive")
-  - Tags appear in PDF reports
-  - Tags sent to Vision One for filtering
-  - Maximum 32 tags per configuration  
-✅ **Custom actions** — Choose response to malware (log, quarantine, or delete)  
-✅ **Persistent config** — Settings saved across container restarts  
-✅ **Test verification** — Built-in EICAR and clean file tests to verify scanner works  
-✅ **Advanced options** — Control file hashing, ML prediction, concurrency (up to 10,000 scans)  
+```
+apps/
+  macos/
+    run.sh              ← build + launch (macOS)
+    v1fs-scanner        ← compiled binary (git-ignored, created by run.sh)
+    V1FSScanner.app/    ← .app bundle   (git-ignored, created by make darwin-app)
+  linux/
+    run.sh              ← build + launch (Linux)
+    v1fs-scanner        ← compiled binary (git-ignored, created by run.sh)
+  windows/
+    v1fs-scanner.exe    ← compiled binary (git-ignored, created by make windows)
+scripts/
+  build-macos-app.sh    ← wraps binary in a .app bundle
+web/                    ← UI assets (embedded into binary at build time)
+internal/               ← Go source
+Makefile                ← explicit build targets for all platforms
+Dockerfile              ← containerised build
+```
+
+## Build from Source (Developers)
+
+Requires **Go 1.24+** and `make`.
+
+```bash
+git clone https://github.com/yourusername/tool-v1fs-manual-scan.git
+cd tool-v1fs-manual-scan
+
+make docker          # Docker image
+make darwin-arm64    # macOS Apple Silicon → apps/macos/v1fs-scanner
+make darwin          # macOS Intel        → apps/macos/v1fs-scanner
+make darwin-app      # macOS .app bundle  → apps/macos/V1FSScanner.app
+make linux           # Linux x86-64       → apps/linux/v1fs-scanner
+make windows         # Windows x86-64     → apps/windows/v1fs-scanner.exe
+make all             # Docker + all native binaries
+make run             # Run locally for development
+```
+
+Web assets are embedded in the binary at build time — no separate `web/` folder is needed at runtime.
 
 ---
 
 ## Supported Regions
 
-- us-east-1 (United States East)
-- eu-central-1 (Europe Central)
-- eu-west-2 (Europe West)
-- ca-central-1 (Canada)
-- ap-southeast-1 (Asia Pacific Southeast)
-- ap-southeast-2 (Asia Pacific Southeast 2)
-- ap-northeast-1 (Asia Pacific Northeast)
-- ap-south-1 (Asia Pacific South)
-- me-central-1 (Middle East Central)
+- `us-east-1` — United States East
+- `eu-central-1` — Europe Central
+- `eu-west-2` — Europe West
+- `ca-central-1` — Canada
+- `ap-southeast-1` — Asia Pacific Southeast
+- `ap-southeast-2` — Asia Pacific Southeast 2
+- `ap-northeast-1` — Asia Pacific Northeast
+- `ap-south-1` — Asia Pacific South
+- `me-central-1` — Middle East Central
 
 ---
 
-## Environment Variables (Optional)
+## Key Features
 
-You can set these when starting the container to pre-configure the app:
-
-| Variable | Purpose | Example |
-|----------|---------|---------|
-| `TM_V1_API_KEY` | Vision One API key | `docker run -e TM_V1_API_KEY=xyz123...` |
-| `TM_V1_REGION` | API region | `docker run -e TM_V1_REGION=us-east-1` |
-| `PORT` | Web port inside container | `docker run -e PORT=8080` |
-
----
-
-## Support
-
-For issues or questions:
-1. Check **Troubleshooting** above
-2. Review your Vision One API key permissions
-3. Run a **Test scanner connection** to verify setup
+- **Four deployment options** — Docker, macOS .app, Linux binary, Windows .exe
+- **Self-contained binaries** — web UI embedded, no external files needed at runtime
+- **Web interface** — no command line required for day-to-day use
+- **Real-time progress** — live file counters, throughput, ETA
+- **PDF reports** — malware details, file hashes, scan tags, clean-file list
+- **Scan history** — review and re-download past reports
+- **Multiple scan paths** — up to 32 folders per job
+- **Scan tags** — custom labels forwarded to Vision One
+- **Custom malware actions** — log, quarantine, or delete
+- **Persistent config** — settings survive restarts on all platforms
+- **EICAR test support** — built-in verification before scanning real data
 
 ---
-
-## Build from Source (Developers)
-
-Requires **Go 1.24+**:
-
-```bash
-git clone https://github.com/yourusername/tool-v1fs-manual-scan.git
-cd tool-v1fs-manual-scan
-docker build -t v1fs-scanner:latest .
-```
-
-Or without Docker:
-```bash
-go mod tidy
-go build -o v1fs-scanner .
-./v1fs-scanner
-```
-
----
-
-## About
 
 Powered by [Trend Vision One™ File Security SDK](https://github.com/trendmicro/tm-v1-fs-golang-sdk)
