@@ -16,7 +16,7 @@ vendor/
 apps/macos/v1fs-scanner
 apps/macos/V1FSScanner.app/
 apps/linux/v1fs-scanner
-apps/windows/*.exe
+# apps/windows/*.exe  — .exe is tracked so users can download without building
 
 # IDE / OS
 .idea/
