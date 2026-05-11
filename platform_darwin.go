@@ -7,14 +7,31 @@ import (
 	"time"
 )
 
-// platformInit opens the app in the default browser after the server is ready.
-// On macOS the binary is typically packaged as a .app bundle (see scripts/build-macos-app.sh).
+// platformInit opens the app in a browser after the server is ready.
+// Safari's HTTPS-Only mode blocks plain HTTP, so we prefer Chrome, Firefox,
+// or Edge. Falls back to the system default and prints the URL as a safety net.
 func platformInit(port string) {
 	url := "http://localhost:" + port
 	waitForServer(url)
-	if err := exec.Command("open", url).Start(); err != nil {
-		fmt.Printf("V1FS Scanner ready → %s\n", url)
+
+	// Browsers that handle plain HTTP without HTTPS-Only restrictions
+	browsers := []string{
+		"Google Chrome",
+		"Firefox",
+		"Brave Browser",
+		"Microsoft Edge",
+		"Chromium",
 	}
+	for _, b := range browsers {
+		if exec.Command("open", "-a", b, url).Run() == nil {
+			return
+		}
+	}
+
+	// Last resort: system default (Safari etc.) — print URL in case it's blocked
+	fmt.Printf("\nV1FS Scanner ready -> %s\n", url)
+	fmt.Println("If Safari shows an HTTPS error, open the URL above in Chrome or Firefox.")
+	exec.Command("open", url).Start()
 }
 
 // waitForServer polls until the HTTP server responds or the timeout expires.
