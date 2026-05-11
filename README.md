@@ -231,9 +231,9 @@ Best for: scanning Windows machines natively. The `.exe` opens a dedicated **Mic
 
 > **AV note:** The Windows binary contains no malware test file bytes. The built-in malware test is not available on Windows — use **Test scanner connection** to verify your API key instead.
 
-### Download (pre-built)
+### Download (pre-built — no install needed)
 
-If someone has already built the binary, just copy `apps/windows/v1fs-scanner.exe` to your Windows machine and double-click it.
+Download the latest `v1fs-scanner.exe` from the [Releases page](https://github.com/andrefernandes86/tool-v1fs-manual-scan/releases/latest), copy it to your Windows machine, and double-click it. Nothing else to install.
 
 ### Build it yourself
 
