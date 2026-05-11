@@ -127,6 +127,8 @@ WantedBy=multi-user.target
 
 Best for: scanning Windows machines natively. The `.exe` has no console window and opens a dedicated **Microsoft Edge app-mode window** (no browser address bar or tabs — looks and feels like a native desktop app). Falls back to Chrome app-mode, then the default browser if neither is found.
 
+> **AV note:** The Windows binary contains no malware test file bytes. The built-in malware test is unavailable on Windows — use the **Test scanner connection** button instead to verify your API key works.
+
 ### Build
 
 On any machine with Go installed (cross-compilation works from macOS or Linux too):
@@ -219,7 +221,7 @@ Before scanning real data, verify your setup:
 
 1. Click **Settings → Test options**
 2. **Test scanner connection** — confirms your API key and region work
-3. **Submit EICAR test file** — confirms malware detection works
+3. **Submit malware test file** — confirms malware detection works
 4. **Submit clean test file** — confirms clean files are not flagged
 
 ---
@@ -306,7 +308,7 @@ Dockerfile              ← containerised build
 Requires **Go 1.24+** and `make`.
 
 ```bash
-git clone https://github.com/yourusername/tool-v1fs-manual-scan.git
+git clone https://github.com/andrefernandes86/tool-v1fs-manual-scan.git
 cd tool-v1fs-manual-scan
 
 make docker          # Docker image
@@ -349,7 +351,7 @@ Web assets are embedded in the binary at build time — no separate `web/` folde
 - **Scan tags** — custom labels forwarded to Vision One
 - **Custom malware actions** — log, quarantine, or delete
 - **Persistent config** — settings survive restarts on all platforms
-- **EICAR test support** — built-in verification before scanning real data
+- **Built-in malware test** — verify detection works before scanning real data
 
 ---
 

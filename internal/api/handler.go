@@ -221,14 +221,16 @@ func (h *Handler) testScanner(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer client.Destroy()
-		probe := eicarProbe()
-		_, probeErr := client.ScanBuffer(probe, "scanner-test.internal", []string{"v1fs-scanner", "scanner-connection-test"})
-		if probeErr != nil {
-			http.Error(w, "gRPC gateway connected but the anti-malware engine is not responding (check if the backend scanner service is running)", http.StatusBadGateway)
-			return
+		msg := "gRPC scanner is responding correctly at " + addr
+		if probe := eicarProbe(); len(probe) > 0 {
+			if _, probeErr := client.ScanBuffer(probe, "scanner-test.internal", []string{"v1fs-scanner", "scanner-connection-test"}); probeErr != nil {
+				http.Error(w, "gRPC gateway connected but the anti-malware engine is not responding (check if the backend scanner service is running)", http.StatusBadGateway)
+				return
+			}
+		} else {
+			msg = "gRPC scanner is reachable at " + addr + " (malware detection test skipped on this platform)"
 		}
 		w.Header().Set("Content-Type", "application/json")
-		msg := "gRPC scanner is responding correctly at " + addr
 		json.NewEncoder(w).Encode(result{OK: true, Message: msg})
 		return
 	}
@@ -288,18 +290,22 @@ func (h *Handler) compatScanner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer client.Destroy()
+	w.Header().Set("Content-Type", "application/json")
 	probe := eicarProbe()
+	if len(probe) == 0 {
+		json.NewEncoder(w).Encode(result{OK: true, Message: "SaaS scanner configuration looks valid (malware detection test skipped on this platform)"})
+		return
+	}
 	verdict, err := client.ScanBuffer(probe, "usb-scanner-heartbeat.internal", []string{"v1fs-scanner", "usb-scanner-heartbeat"})
 	if err != nil {
 		http.Error(w, "malware detection test failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
 	if verdict == "" {
-		http.Error(w, "EICAR test file was not detected as malicious", http.StatusBadGateway)
+		http.Error(w, "malware test file was not detected as malicious", http.StatusBadGateway)
 		return
 	}
-	json.NewEncoder(w).Encode(result{OK: true, Message: "malware detection is working (EICAR detected as: " + verdict + ")"})
+	json.NewEncoder(w).Encode(result{OK: true, Message: "malware detection is working (test file detected as: " + verdict + ")"})
 }
 
 func (h *Handler) scannerStatus(w http.ResponseWriter, r *http.Request) {
@@ -317,6 +323,9 @@ func (h *Handler) scannerStatus(w http.ResponseWriter, r *http.Request) {
 				if err == nil {
 					defer client.Destroy()
 					probe := eicarProbe()
+					if len(probe) == 0 {
+						probe = []byte("hello") // benign connectivity check
+					}
 					_, err := client.ScanBuffer(probe, "usb-scanner-heartbeat.internal", []string{"v1fs-scanner", "usb-scanner-heartbeat"})
 					if err == nil {
 						available = true
@@ -330,6 +339,9 @@ func (h *Handler) scannerStatus(w http.ResponseWriter, r *http.Request) {
 			if err == nil {
 				defer client.Destroy()
 				probe := eicarProbe()
+				if len(probe) == 0 {
+					probe = []byte("hello") // benign connectivity check
+				}
 				_, err := client.ScanBuffer(probe, "usb-scanner-heartbeat.internal", []string{"v1fs-scanner", "usb-scanner-heartbeat"})
 				if err == nil {
 					available = true
@@ -401,7 +413,7 @@ func (h *Handler) getTestSamples(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"path": h.testSamplesPath,
-		"eicarFile": "eicar.com",
+		"malwareTestFile": "malware-test.com",
 		"cleanFile":  "hello.txt",
 	})
 }
@@ -671,6 +683,9 @@ func grpcLocalProbeSoftFailure(err error) bool {
 // Some gateways return Unimplemented / "not compatible" for buffer-only probes while still scanning files.
 func localGRPCCompatProbe(client localGRPCCompatClient) (warning string, err error) {
 	probe := eicarProbe()
+	if len(probe) == 0 {
+		return "compatibility probe skipped on this platform (no malware test available)", nil
+	}
 	tmp, err := os.CreateTemp("", "v1fs-compat-*.com")
 	if err != nil {
 		return "", err
@@ -700,9 +715,9 @@ func localGRPCCompatProbe(client localGRPCCompatClient) (warning string, err err
 		return "", errBuf
 	}
 	if grpcLocalProbeSoftFailure(errBuf) {
-		return "Gateway is reachable but rejected the malware probe with a version-handshake error. If directory or EICAR test scans still complete, your deployment is usable; otherwise upgrade the gateway or File Security SDK to matching versions.", nil
+		return "Gateway is reachable but rejected the malware probe with a version-handshake error. If directory or malware test scans still complete, your deployment is usable; otherwise upgrade the gateway or File Security SDK to matching versions.", nil
 	}
-	return "", fmt.Errorf("EICAR test file was not detected as malicious")
+	return "", fmt.Errorf("malware test file was not detected as malicious")
 }
 
 func normalizeLocalScannerURL(raw string) string {

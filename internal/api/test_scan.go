@@ -16,8 +16,8 @@ func ensureTestSamples(dir string) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-	// EICAR bytes are assembled on demand via eicarProbe() — not stored statically.
-	if err := os.WriteFile(filepath.Join(dir, "eicar.com"), eicarProbe(), 0644); err != nil {
+	// Malware test bytes are assembled on demand via eicarProbe() — not stored statically.
+	if err := os.WriteFile(filepath.Join(dir, "malware-test.com"), eicarProbe(), 0644); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("Hello World\n"), 0644); err != nil {
@@ -42,7 +42,7 @@ func (h *Handler) startTestScan(w http.ResponseWriter, r *http.Request) {
 	var srcName string
 	switch sample {
 	case "eicar":
-		srcName = "eicar.com"
+		srcName = "malware-test.com"
 	case "clean":
 		srcName = "hello.txt"
 	default:
@@ -74,10 +74,15 @@ func (h *Handler) startTestScan(w http.ResponseWriter, r *http.Request) {
 	dest := filepath.Join(testRoot, srcName)
 
 	// For EICAR: assemble bytes at submission time — never read from disk.
+	// On Windows eicarProbe() returns nil; the test is unavailable there.
 	// For clean: read hello.txt from the samples directory (benign file).
 	var data []byte
 	if sample == "eicar" {
 		data = eicarProbe()
+		if len(data) == 0 {
+			http.Error(w, "malware test is not available on this platform", http.StatusNotImplemented)
+			return
+		}
 	} else {
 		src := filepath.Join(h.testSamplesPath, srcName)
 		var err error

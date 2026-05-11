@@ -1,3 +1,5 @@
+//go:build !windows
+
 package api
 
 // eicarProbe returns the 68-byte EICAR test-file content.

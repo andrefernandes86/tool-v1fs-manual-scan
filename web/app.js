@@ -679,7 +679,7 @@
     btnCompatScanner.addEventListener('click', async () => {
       try {
         const res = await api('/api/scanner/compat', { method: 'POST', json: true, body: JSON.stringify({}) });
-        alert('✓ Malware detection works!\n\n' + (res.message || 'EICAR test file was detected as malicious.'));
+        alert('✓ Malware detection works!\n\n' + (res.message || 'Malware test file was detected as malicious.'));
       } catch (err) {
         alert('✗ Malware detection failed:\n\n' + err.message);
       }
@@ -786,7 +786,7 @@
       alert('Destination folder is required.');
       return;
     }
-    const defaultName = (sample === 'eicar' ? 'EICAR test' : 'Clean test') + ' - ' + destDir;
+    const defaultName = (sample === 'eicar' ? 'Malware test' : 'Clean test') + ' - ' + destDir;
     const reportNameInput = window.prompt('Optional report name for this test scan:', defaultName);
     if (reportNameInput === null) return;
     const reportName = reportNameInput.trim();
