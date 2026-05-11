@@ -12,15 +12,12 @@ import (
 	"v1fs-scanner/internal/scanner"
 )
 
-// Keep test sample contents in API layer too, so missing files can be recreated
-// without requiring a full container restart.
-const eicarContent = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
-
 func ensureTestSamples(dir string) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "eicar.com"), []byte(eicarContent), 0644); err != nil {
+	// Malware test bytes are assembled on demand via eicarProbe() — not stored statically.
+	if err := os.WriteFile(filepath.Join(dir, "malware-test.com"), eicarProbe(), 0644); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("Hello World\n"), 0644); err != nil {
@@ -45,7 +42,7 @@ func (h *Handler) startTestScan(w http.ResponseWriter, r *http.Request) {
 	var srcName string
 	switch sample {
 	case "eicar":
-		srcName = "eicar.com"
+		srcName = "malware-test.com"
 	case "clean":
 		srcName = "hello.txt"
 	default:
@@ -74,29 +71,35 @@ func (h *Handler) startTestScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	src := filepath.Join(h.testSamplesPath, srcName)
 	dest := filepath.Join(testRoot, srcName)
 
-	// Ensure only the selected sample is present in the test folder.
-	otherSample := "eicar.com"
-	if srcName == "eicar.com" {
-		otherSample = "hello.txt"
-	}
-	_ = os.Remove(filepath.Join(testRoot, otherSample))
-
-	data, err := os.ReadFile(src)
-	if err != nil {
-		// Recover from missing sample files in persisted volumes by recreating them.
-		if recErr := ensureTestSamples(h.testSamplesPath); recErr != nil {
-			http.Error(w, "failed to read sample file", http.StatusInternalServerError)
+	// For EICAR: assemble bytes at submission time — never read from disk.
+	// On Windows eicarProbe() returns nil; the test is unavailable there.
+	// For clean: read hello.txt from the samples directory (benign file).
+	var data []byte
+	if sample == "eicar" {
+		data = eicarProbe()
+		if len(data) == 0 {
+			http.Error(w, "malware test is not available on this platform", http.StatusNotImplemented)
 			return
 		}
+	} else {
+		src := filepath.Join(h.testSamplesPath, srcName)
+		var err error
 		data, err = os.ReadFile(src)
 		if err != nil {
-			http.Error(w, "failed to read sample file", http.StatusInternalServerError)
-			return
+			if recErr := ensureTestSamples(h.testSamplesPath); recErr != nil {
+				http.Error(w, "failed to read sample file", http.StatusInternalServerError)
+				return
+			}
+			data, err = os.ReadFile(src)
+			if err != nil {
+				http.Error(w, "failed to read sample file", http.StatusInternalServerError)
+				return
+			}
 		}
 	}
+
 	if err := os.WriteFile(dest, data, 0644); err != nil {
 		http.Error(w, "failed to write sample file", http.StatusBadRequest)
 		return

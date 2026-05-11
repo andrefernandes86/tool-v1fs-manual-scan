@@ -245,7 +245,7 @@
           <h2>Test options</h2>
           <p class="hint">Test samples are created automatically when the app starts. Use them to verify that malicious files are detected and clean files are not.</p>
           <ul class="test-samples-list">
-            <li><strong>eicar.com</strong> — EICAR standard antivirus test file (should be detected as malicious)</li>
+            <li><strong>malware-test.com</strong> — Standard AV test file (should be detected as malicious)</li>
             <li><strong>hello.txt</strong> — Plain text file with "Hello World" (should be clean)</li>
           </ul>
           <p class="test-samples-path">Path in container: <code id="test-samples-path">/data/test-samples</code></p>
@@ -253,9 +253,9 @@
             Destination folder for test files
             <input type="text" id="input-test-dest" placeholder="/data/test-target">
           </label>
-          <p class="hint">Each run creates a unique subfolder under the destination (e.g. <code>v1fs-test-…</code>) with only that sample file, then scans that folder. This avoids picking up other files such as <code>test-samples/eicar.com</code> when the parent is broad (e.g. <code>/data</code>).</p>
+          <p class="hint">Each run creates a unique subfolder under the destination (e.g. <code>v1fs-test-…</code>) with only that sample file, then scans that folder. This avoids picking up other files such as <code>test-samples/malware-test.com</code> when the parent is broad (e.g. <code>/data</code>).</p>
           <div class="test-buttons">
-            <button type="button" id="btn-test-eicar" class="btn btn-primary">Submit EICAR test file</button>
+            <button type="button" id="btn-test-eicar" class="btn btn-primary">Submit malware test file</button>
             <button type="button" id="btn-test-clean" class="btn">Submit clean test file</button>
           </div>
         </div>

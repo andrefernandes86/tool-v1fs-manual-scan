@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -205,14 +206,7 @@ func (c *Config) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	dir := path
-	for i := len(dir) - 1; i >= 0; i-- {
-		if dir[i] == '/' {
-			dir = dir[:i]
-			break
-		}
-	}
-	if dir != path {
+	if dir := filepath.Dir(path); dir != "." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return err
 		}

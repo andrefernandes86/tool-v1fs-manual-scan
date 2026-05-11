@@ -9,9 +9,14 @@ config.json
 
 # Go
 /v1fs-scanner
-*.exe
 *.test
 vendor/
+
+# Compiled app binaries (built by apps/*/run.sh or make)
+apps/macos/v1fs-scanner
+apps/macos/V1FSScanner.app/
+apps/linux/v1fs-scanner
+apps/windows/*.exe
 
 # IDE / OS
 .idea/

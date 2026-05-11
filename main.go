@@ -11,19 +11,13 @@ import (
 	"v1fs-scanner/internal/scanner"
 )
 
-// EICAR standard antivirus test file content (68 bytes, no newline)
-const eicarContent = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
-
+// createTestSamples seeds the clean test file at startup.
+// The EICAR sample is NOT written here — it is assembled on demand
+// by eicarProbe() only when a test submission is triggered.
 func createTestSamples(dir string) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		log.Printf("create test-samples dir: %v", err)
 		return
-	}
-	eicarPath := filepath.Join(dir, "eicar.com")
-	if err := os.WriteFile(eicarPath, []byte(eicarContent), 0644); err != nil {
-		log.Printf("write eicar.com: %v", err)
-	} else {
-		log.Printf("created test sample: %s", eicarPath)
 	}
 	helloPath := filepath.Join(dir, "hello.txt")
 	if err := os.WriteFile(helloPath, []byte("Hello World\n"), 0644); err != nil {
@@ -33,14 +27,30 @@ func createTestSamples(dir string) {
 	}
 }
 
+// defaultDataDir returns a writable directory for config and reports.
+// In Docker the /data volume is always present; natively falls back to
+// the OS user-config directory so the app works on Windows/macOS/Linux.
+func defaultDataDir() string {
+	if _, err := os.Stat("/data"); err == nil {
+		return "/data"
+	}
+	base, err := os.UserConfigDir()
+	if err != nil {
+		base, _ = os.UserHomeDir()
+	}
+	return filepath.Join(base, "V1FSScanner")
+}
+
 func main() {
+	dataDir := defaultDataDir()
+
 	configPath := os.Getenv("V1FS_CONFIG_PATH")
 	if configPath == "" {
-		configPath = "/data/config.json"
+		configPath = filepath.Join(dataDir, "config.json")
 	}
 	reportsDir := os.Getenv("V1FS_REPORTS_DIR")
 	if reportsDir == "" {
-		reportsDir = "/data/reports"
+		reportsDir = filepath.Join(dataDir, "reports")
 	}
 	if err := os.MkdirAll(reportsDir, 0755); err != nil {
 		log.Fatalf("create reports dir: %v", err)
@@ -48,7 +58,7 @@ func main() {
 
 	testSamplesDir := os.Getenv("V1FS_TEST_SAMPLES_DIR")
 	if testSamplesDir == "" {
-		testSamplesDir = filepath.Join(filepath.Dir(reportsDir), "test-samples")
+		testSamplesDir = filepath.Join(dataDir, "test-samples")
 	}
 	createTestSamples(testSamplesDir)
 
@@ -66,13 +76,17 @@ func main() {
 	}
 
 	store := scanner.NewTaskStore(reportsDir)
-	handler := api.NewHandler(cfg, configPath, store, testSamplesDir)
+	handler := api.NewHandler(cfg, configPath, store, testSamplesDir, WebFS)
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 	log.Printf("V1FS Scanner listening on :%s", port)
+
+	// Platform-specific startup: open browser (macOS/Windows) or print URL (Linux).
+	go platformInit(port)
+
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatal(err)
 	}
